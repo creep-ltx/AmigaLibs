@@ -146,5 +146,5 @@ dependencies). They may compile `src/core.c` in statically instead of their own 
 **`core.c` must always build outside the library** too. Since 2026-10-16 (the user's yes)
 **CUtils' man, top and ctop compile `src/core.c` and `src/glue.c` into themselves** with CUtils'
 flags (`-resident32 -DTUI_STATIC`, never `TUI_LIB`); `make` here checks that (`cutilscheck`), and
-after a change run `make -C ../.. bin/man bin/top bin/ctop` (in CUtils) too. CFile has no terminal mode. Markdown's pictures through
+after a change run `make -C ../../CUtils bin/man bin/top bin/ctop` (CUtils beside AmigaLibs) too. CFile has no terminal mode. Markdown's pictures through
 `TuiRaw` not tried yet (Ahiru's are, on the A1200). Then grow it: keys files, themes, `ENVARC:FileColours`, lists, menus, a file picker.

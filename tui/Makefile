@@ -66,7 +66,7 @@ check060: build/060/tui.library
 # own flags (pure, resident, TUI_STATIC; the user's rule: no LIBS: file for
 # CUtils). This builds them that way too, so a change that would break CUtils
 # fails here; after changing core.c also run
-# make -C ../.. bin/man bin/top bin/ctop
+# make -C ../../CUtils bin/man bin/top bin/ctop
 cutilscheck: src/core.c src/glue.c include/tui.h include/libraries/tui.h
 	@mkdir -p build/cutils
 	$(CC) $(CFLAGS) -resident32 -DTUI_STATIC -c src/core.c -o build/cutils/core.o
