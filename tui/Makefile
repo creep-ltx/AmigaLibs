@@ -9,10 +9,11 @@
 #
 # The library, one per processor; install one as LIBS:tui.library:
 #   build/000/tui.library   every Amiga (68000 and up)
-#   build/020/tui.library   68020, 68030 (and Emu68)
-#   build/040/tui.library   68040 and 68060: built for the 060, without the
-#                           64-bit multiply and divide it has only in software
-#                           (the usual Amiga 000/020/040 trio)
+#   build/020/tui.library   68020, 68030, 68040 (and Emu68)
+#   build/060/tui.library   68060: without the 64-bit multiply and divide the
+#                           060 has only in software (runs on a 68040 too).
+#                           Not the 000/020/040 trio of programs with floating
+#                           point: this library has none, so only the 060 differs
 # A 68030 runs the 020 code as it is: gcc makes the same code for both.
 #
 # The library links nothing but its own code (-nostartfiles -nostdlib); the
@@ -29,12 +30,11 @@ WARN    = -Os -noixemul -fomit-frame-pointer -fno-common -fbbb=- -Wall -Wno-poin
 CFLAGS  = $(WARN) -m68020
 LIBFLAGS = -fno-builtin -ffreestanding -DTUI_LIB
 NIX13   = $(AMIGA)/m68k-amigaos/libnix/lib/libnix13.a
-CPUS    = 000 020 040
-# the compiler's processor for each build: the 040 one is the 060's code,
-# which runs on a 68040 as it is
+CPUS    = 000 020 060
+# the compiler's processor for each build
 CPU_000 = -m68000
 CPU_020 = -m68020
-CPU_040 = -m68060
+CPU_060 = -m68060
 ARITH_000 = $(NIX13)
 
 all: $(foreach c,$(CPUS),build/$(c)/tui.library) build/libtui.a build/libtuiglue.a \
@@ -61,12 +61,12 @@ build/$(1)/tui.library: build/start.o build/$(1)/lib.o build/$(1)/core.o
 endef
 $(foreach c,$(CPUS),$(eval $(call LIBRARY,$(c))))
 
-# the 040 one (for the 060 too) must not have the 64-bit forms of muls.l/mulu.l/divs.l/divu.l
+# the 060 one must not have the 64-bit forms of muls.l/mulu.l/divs.l/divu.l
 # (three operands in objdump's words, ea,Dh,Dl; divsll is the 32-bit one)
-check040: build/040/tui.library
-	@! $(OBJDUMP) -m m68k:68060 -d build/040/core.o build/040/lib.o | grep -E '\s(mul|div)[su]l\s+[^ ]*,%?d[0-7],%?d[0-7]' \
-	    || (echo "build/040 has a 64-bit multiply or divide"; false)
-	@echo "build/040: no 64-bit multiply or divide (runs on the 060)"
+check060: build/060/tui.library
+	@! $(OBJDUMP) -m m68k:68060 -d build/060/core.o build/060/lib.o | grep -E '\s(mul|div)[su]l\s+[^ ]*,%?d[0-7],%?d[0-7]' \
+	    || (echo "build/060 has a 64-bit multiply or divide"; false)
+	@echo "build/060: no 64-bit multiply or divide"
 
 # CUtils' man, top and ctop build core.c and glue.c into themselves with its
 # own flags (pure, resident, TUI_STATIC; the user's rule: no LIBS: file for
@@ -119,4 +119,4 @@ headers: tui.sfd
 clean:
 	rm -rf build
 
-.PHONY: all headers clean check040 cutilscheck
+.PHONY: all headers clean check060 cutilscheck
