@@ -1,0 +1,668 @@
+TABLE OF CONTENTS
+
+tui.library/TuiBeep
+tui.library/TuiBox
+tui.library/TuiClear
+tui.library/TuiClose
+tui.library/TuiCursor
+tui.library/TuiDirty
+tui.library/TuiFill
+tui.library/TuiFlush
+tui.library/TuiKeyAfter
+tui.library/TuiKeyWaiting
+tui.library/TuiOpen
+tui.library/TuiPoll
+tui.library/TuiPossible
+tui.library/TuiPut
+tui.library/TuiPutC
+tui.library/TuiPutUTF8
+tui.library/TuiRaw
+tui.library/TuiRedraw
+tui.library/TuiResized
+tui.library/TuiResume
+tui.library/TuiSignal
+tui.library/TuiSuspend
+tui.library/TuiTitle
+tui.library/TuiWait
+tui.library/TuiBeep                                       tui.library/TuiBeep
+
+   NAME
+	TuiBeep -- ring the terminal's bell (0.1)
+
+   SYNOPSIS
+	TuiBeep(t)
+	        A0
+
+	VOID TuiBeep(struct Tui *);
+
+   FUNCTION
+	Sends the bell character at once (no flush needed). What it does
+	is the terminal's choice: a flash, a sound, or nothing.
+
+   INPUTS
+	t - from TuiOpen()
+
+tui.library/TuiBox                                         tui.library/TuiBox
+
+   NAME
+	TuiBox -- the character for a part of a box (0.1)
+
+   SYNOPSIS
+	c = TuiBox(t, which)
+	D0         A0 D0
+
+	ULONG TuiBox(struct Tui *, LONG);
+
+   FUNCTION
+	Returns the character to draw a box part with: a Unicode line in
+	CTerm, ASCII in a plain console. Draws nothing itself: pass the
+	result to TuiPutC() or TuiFill().
+
+   INPUTS
+	t     - from TuiOpen(); NULL gives the ASCII set
+	which - BX_H, BX_V (lines), BX_TL, BX_TR, BX_BL, BX_BR (corners),
+	        BX_ARROW, BX_DOT
+
+   RESULT
+	c - the character; '?' for an unknown which
+
+   EXAMPLE
+	TuiFill(t, 1, 0, w - 2, TuiBox(t, BX_H), 7, TC_DEFAULT, 0);
+
+tui.library/TuiClear                                     tui.library/TuiClear
+
+   NAME
+	TuiClear -- empty the whole grid (0.1)
+
+   SYNOPSIS
+	TuiClear(t)
+	         A0
+
+	VOID TuiClear(struct Tui *);
+
+   FUNCTION
+	Fills every cell with a space, colour 7 on TC_DEFAULT, no
+	attributes. Like every drawing call it shows on the next flush,
+	and only the cells that were not empty already are sent.
+
+   INPUTS
+	t - from TuiOpen()
+
+   NOTES
+	Clearing and drawing everything again for each change is the
+	intended way to use the library: TuiFlush() sends only the
+	difference.
+
+tui.library/TuiClose                                     tui.library/TuiClose
+
+   NAME
+	TuiClose -- give the terminal back (0.1)
+
+   SYNOPSIS
+	TuiClose(t)
+	         A0
+
+	VOID TuiClose(struct Tui *);
+
+   FUNCTION
+	Leaves raw mode, switches the cursor, line wrapping and (in CTerm)
+	the Shell's own screen back on, and frees t. A plain console has
+	no second screen: it is cleared.
+
+   INPUTS
+	t - from TuiOpen(); NULL is safe
+
+   NOTES
+	Call it on every way out of the program, errors included, or the
+	Shell is left in raw mode with no cursor. t may not be used again.
+
+   SEE ALSO
+	TuiOpen(), TuiSuspend()
+
+tui.library/TuiCursor                                   tui.library/TuiCursor
+
+   NAME
+	TuiCursor -- where the text cursor shows (0.1)
+
+   SYNOPSIS
+	TuiCursor(t, col, row, on)
+	          A0 D0   D1   D2
+
+	VOID TuiCursor(struct Tui *, LONG, LONG, LONG);
+
+   FUNCTION
+	Sets where the cursor is shown after the next TuiFlush(), or hides
+	it. While the library draws, the cursor is always hidden, so it
+	never jumps about.
+
+   INPUTS
+	t        - from TuiOpen()
+	col, row - the cell, from 0
+	on       - TRUE to show it there, FALSE to hide it (the default)
+
+tui.library/TuiDirty                                     tui.library/TuiDirty
+
+   NAME
+	TuiDirty -- cells the terminal may show otherwise now (0.1)
+
+   SYNOPSIS
+	TuiDirty(t, col, row, w, h)
+	         A0 D0   D1   D2 D3
+
+	VOID TuiDirty(struct Tui *, LONG, LONG, LONG, LONG);
+
+   FUNCTION
+	Marks a rectangle of cells as unknown, so the next TuiFlush()
+	sends them again whatever they hold. Used to take away a picture
+	sent with TuiRaw().
+
+   INPUTS
+	t        - from TuiOpen()
+	col, row - the top-left cell
+	w, h     - the size in cells; the part outside the grid is ignored
+
+   SEE ALSO
+	TuiRaw(), TuiRedraw()
+
+tui.library/TuiFill                                       tui.library/TuiFill
+
+   NAME
+	TuiFill -- a row of one character (0.1)
+
+   SYNOPSIS
+	TuiFill(t, col, row, w, c, fg, bg, attr)
+	        A0 D0   D1   D2 D3 D4  D5  D6
+
+	VOID TuiFill(struct Tui *, LONG, LONG, LONG, ULONG, LONG, LONG, LONG);
+
+   FUNCTION
+	Puts w copies of c from col along row: lines, bars, empty space.
+
+   INPUTS
+	t        - from TuiOpen()
+	col, row - the first cell; what falls outside the grid is cut off
+	w        - how many cells
+	c        - the character, Latin-1 or Unicode (see TuiPutC())
+	fg, bg   - colours: 0-15, TC_DEFAULT, TC_X(n), TC_RGB(r,g,b),
+	           TC_PEN(n)
+	attr     - TA_BOLD, TA_UNDER, TA_REV, TA_ITAL, TA_DIM, TA_STRIKE
+	           or'ed together, or 0
+
+   NOTES
+	A full block in a plain console becomes a reversed space: attr's
+	TA_REV is flipped for it.
+
+tui.library/TuiFlush                                     tui.library/TuiFlush
+
+   NAME
+	TuiFlush -- show what was drawn (0.1)
+
+   SYNOPSIS
+	TuiFlush(t)
+	         A0
+
+	VOID TuiFlush(struct Tui *);
+
+   FUNCTION
+	Compares the grid the program drew with what the terminal shows
+	and sends only the cells that differ, then places or hides the
+	cursor (TuiCursor()). Does nothing while suspended.
+
+   INPUTS
+	t - from TuiOpen()
+
+   NOTES
+	TuiWait() flushes by itself before it waits. A program with its
+	own Wait() (TuiSignal()) must flush before it. The bottom-right
+	cell of a plain console is never written: the console would
+	scroll.
+
+tui.library/TuiKeyAfter                               tui.library/TuiKeyAfter
+
+   NAME
+	TuiKeyAfter -- wait for a key after a command's output (0.1)
+
+   SYNOPSIS
+	TuiKeyAfter(t, msg)
+	            A0 A1
+
+	VOID TuiKeyAfter(struct Tui *, CONST_STRPTR);
+
+   FUNCTION
+	While suspended: shows msg in reverse under the command's output
+	and waits for one key, so the user can read the output before
+	TuiResume() draws the program again.
+
+   INPUTS
+	t   - from TuiOpen(), suspended
+	msg - the text, Latin-1; NULL gives " a key goes back "
+
+   NOTES
+	If the terminal goes while waiting, the next TuiWait() returns
+	TE_END.
+
+   SEE ALSO
+	TuiSuspend(), TuiResume()
+
+tui.library/TuiKeyWaiting                           tui.library/TuiKeyWaiting
+
+   NAME
+	TuiKeyWaiting -- is an event waiting? (0.3)
+
+   SYNOPSIS
+	waiting = TuiKeyWaiting(t)
+	D0                      A0
+
+	LONG TuiKeyWaiting(struct Tui *);
+
+   FUNCTION
+	Says whether a key, click, paste or the end of the terminal is
+	waiting, without taking it or waiting. For a long job that should
+	stop when the user presses a key.
+
+   INPUTS
+	t - from TuiOpen()
+
+   RESULT
+	waiting - TRUE if something is waiting (take it with TuiPoll()
+	          or TuiWait()); also TRUE if the terminal has gone
+
+   SEE ALSO
+	TuiPoll()
+
+tui.library/TuiOpen                                       tui.library/TuiOpen
+
+   NAME
+	TuiOpen -- take over the terminal (0.1)
+
+   SYNOPSIS
+	t = TuiOpen(in)
+	D0          D1
+
+	struct Tui *TuiOpen(BPTR);
+
+   FUNCTION
+	Sets the console to raw mode, switches off wrapping, takes CTerm's
+	second screen, mouse, pastes and UTF-8 where it has them, asks the
+	terminal's size and makes a grid that size, empty.
+
+	The public fields of struct Tui (read them, never write them):
+	    Cols, Rows   the size now
+	    CTerm        TRUE in CTerm
+	    UTF8         TRUE if the terminal takes UTF-8
+	    CellW, CellH a cell in pixels (CTerm), else 0
+
+   INPUTS
+	in - the console to read keys from; 0 for the program's Input().
+	     A program whose Input() is a pipe opens "*" itself and passes
+	     that.
+
+   RESULT
+	t - the terminal, for every other call; NULL if in or Output() is
+	    not an interactive console (started from Workbench, output to
+	    a file, NIL:) or memory ran out
+
+   NOTES
+	t belongs to the calling task: use it only from there.
+
+   SEE ALSO
+	TuiPossible(), TuiClose()
+
+tui.library/TuiPoll                                       tui.library/TuiPoll
+
+   NAME
+	TuiPoll -- the next event, without waiting (0.3)
+
+   SYNOPSIS
+	got = TuiPoll(t, e)
+	D0            A0 A1
+
+	LONG TuiPoll(struct Tui *, TuiEv *);
+
+   FUNCTION
+	For a program with its own Wait(): after the TuiSignal() signal
+	came (or at any time), takes the next event if there is one.
+	Call it until it returns 0.
+
+   INPUTS
+	t - from TuiOpen()
+	e - filled in (see TuiWait() for the event types)
+
+   RESULT
+	got - 1 with an event in e, 0 with e->type TE_NONE
+
+   NOTES
+	Unlike TuiWait(), Ctrl-C to F are left as the program's own
+	signals; they are not turned into keys.
+
+   SEE ALSO
+	TuiSignal(), TuiWait()
+
+tui.library/TuiPossible                               tui.library/TuiPossible
+
+   NAME
+	TuiPossible -- could TuiOpen() work here? (0.1)
+
+   SYNOPSIS
+	ok = TuiPossible(in)
+	D0               D1
+
+	LONG TuiPossible(BPTR);
+
+   FUNCTION
+	Says whether in (0: Input()) and Output() are both an interactive
+	console, without changing anything. For a program that falls back
+	to plain output when it is not in a terminal.
+
+   INPUTS
+	in - as for TuiOpen()
+
+   RESULT
+	ok - TRUE if TuiOpen() can work
+
+tui.library/TuiPut                                         tui.library/TuiPut
+
+   NAME
+	TuiPut -- Latin-1 text (0.1)
+
+   SYNOPSIS
+	TuiPut(t, col, row, s, len, fg, bg, attr)
+	       A0 D0   D1   A1 D2   D3  D4  D5
+
+	VOID TuiPut(struct Tui *, LONG, LONG, CONST_STRPTR, LONG, LONG, LONG,
+	            LONG);
+
+   FUNCTION
+	Puts len bytes of Latin-1 text from col along row, one cell a
+	byte. The fastest way to draw text.
+
+   INPUTS
+	t        - from TuiOpen()
+	col, row - the first cell; what falls outside the grid is cut off,
+	           also when col is negative
+	s        - the text
+	len      - its length in bytes: must be given, 0 or more
+	fg, bg   - colours, see TuiFill()
+	attr     - attributes, see TuiFill()
+
+   NOTES
+	Control characters show as '?'. For UTF-8 text use TuiPutUTF8().
+
+tui.library/TuiPutC                                       tui.library/TuiPutC
+
+   NAME
+	TuiPutC -- one character (0.1)
+
+   SYNOPSIS
+	TuiPutC(t, col, row, c, fg, bg, attr)
+	        A0 D0   D1   D2 D3  D4  D5
+
+	VOID TuiPutC(struct Tui *, LONG, LONG, ULONG, LONG, LONG, LONG);
+
+   FUNCTION
+	Puts one character in one cell.
+
+   INPUTS
+	t        - from TuiOpen()
+	col, row - the cell; outside the grid nothing happens
+	c        - Latin-1 (0-255) or Unicode (up to 0x10FFFF). A plain
+	           console gets the nearest it has (box lines as - | +,
+	           accented letters without the accent, ...). Wide and
+	           combining characters show as '?' everywhere.
+	fg, bg   - colours, see TuiFill()
+	attr     - attributes, see TuiFill()
+
+tui.library/TuiPutUTF8                                 tui.library/TuiPutUTF8
+
+   NAME
+	TuiPutUTF8 -- UTF-8 text (0.2)
+
+   SYNOPSIS
+	cells = TuiPutUTF8(t, col, row, s, len, fg, bg, attr)
+	D0                 A0 D0   D1   A1 D2   D3  D4  D5
+
+	LONG TuiPutUTF8(struct Tui *, LONG, LONG, CONST_STRPTR, LONG, LONG,
+	                LONG, LONG);
+
+   FUNCTION
+	Puts UTF-8 text from col along row, one cell a character. A byte
+	that is not valid UTF-8 is taken as Latin-1, so Latin-1 text still
+	shows right.
+
+   INPUTS
+	t        - from TuiOpen(); NULL only counts the cells
+	col, row - the first cell; what falls outside the grid is cut off
+	s        - the text
+	len      - its length in bytes, or -1 for up to its 0
+	fg, bg   - colours, see TuiFill()
+	attr     - attributes, see TuiFill()
+
+   RESULT
+	cells - how many cells the text takes, counting those cut off:
+	        the next text can follow at col + cells
+
+   NOTES
+	Check lib_Revision >= 2 before calling it.
+
+tui.library/TuiRaw                                         tui.library/TuiRaw
+
+   NAME
+	TuiRaw -- bytes straight to the terminal (0.1)
+
+   SYNOPSIS
+	TuiRaw(t, col, row, s, n)
+	       A0 D0   D1   A1 D2
+
+	VOID TuiRaw(struct Tui *, LONG, LONG, CONST_STRPTR, LONG);
+
+   FUNCTION
+	Moves to the cell and writes n bytes as they are, at once: a
+	picture (sixel, kitty, iTerm) or another sequence the library does
+	not know. Afterwards the library forgets where the cursor is and
+	which colours are set.
+
+   INPUTS
+	t        - from TuiOpen()
+	col, row - where the bytes start
+	s, n     - the bytes and their count
+
+   NOTES
+	Flush first. The cells under a picture are still the library's:
+	draw nothing there while it shows, and TuiDirty() them to take it
+	away. Send pictures only to terminals that take them.
+
+   SEE ALSO
+	TuiDirty()
+
+tui.library/TuiRedraw                                   tui.library/TuiRedraw
+
+   NAME
+	TuiRedraw -- send every cell on the next flush (0.1)
+
+   SYNOPSIS
+	TuiRedraw(t)
+	          A0
+
+	VOID TuiRedraw(struct Tui *);
+
+   FUNCTION
+	Clears the terminal and forgets what it shows, so the next
+	TuiFlush() sends the whole grid. For when something else wrote to
+	the terminal, or the user asks for a redraw (Ctrl-L).
+
+   INPUTS
+	t - from TuiOpen()
+
+tui.library/TuiResized                                 tui.library/TuiResized
+
+   NAME
+	TuiResized -- make the grid the terminal's new size (0.1)
+
+   SYNOPSIS
+	changed = TuiResized(t)
+	D0                   A0
+
+	LONG TuiResized(struct Tui *);
+
+   FUNCTION
+	After a TE_RESIZE event: makes the grid Cols x Rows, empty, and
+	sends everything on the next flush. The program then draws
+	everything again.
+
+   INPUTS
+	t - from TuiOpen()
+
+   RESULT
+	changed - TRUE if the size really changed
+
+   NOTES
+	The size is kept between 10 x 3 and 400 x 200.
+
+tui.library/TuiResume                                   tui.library/TuiResume
+
+   NAME
+	TuiResume -- take the terminal again after TuiSuspend() (0.1)
+
+   SYNOPSIS
+	TuiResume(t)
+	          A0
+
+	VOID TuiResume(struct Tui *);
+
+   FUNCTION
+	Raw mode and the other settings again, asks the size (it may have
+	changed meanwhile) and sends every cell on the next flush.
+
+   INPUTS
+	t - from TuiOpen(), suspended
+
+   NOTES
+	The program should draw everything again: Cols and Rows may differ.
+
+tui.library/TuiSignal                                   tui.library/TuiSignal
+
+   NAME
+	TuiSignal -- the signal to add to the program's own Wait() (0.3)
+
+   SYNOPSIS
+	sigmask = TuiSignal(t)
+	D0                  A0
+
+	ULONG TuiSignal(struct Tui *);
+
+   FUNCTION
+	For a program that waits for more than the terminal (a window,
+	ARexx, a socket). Sends the request for keys to the console if it
+	is not out already, and returns the signal mask to add to Wait().
+	When it comes, take the events with TuiPoll().
+
+   INPUTS
+	t - from TuiOpen()
+
+   RESULT
+	sigmask - the signal, as a mask
+
+   EXAMPLE
+	TuiFlush(t);
+	sig = Wait(TuiSignal(t) | arexxsig | SIGBREAKF_CTRL_C);
+	...
+	while (TuiPoll(t, &e)) handle(&e);
+
+   NOTES
+	Call it before every Wait(), not once. The signal comes within a
+	quarter of a second even with no key pressed; then TuiPoll() just
+	returns 0.
+
+   SEE ALSO
+	TuiPoll(), TuiKeyWaiting()
+
+tui.library/TuiSuspend                                 tui.library/TuiSuspend
+
+   NAME
+	TuiSuspend -- lend the terminal to a command (0.1)
+
+   SYNOPSIS
+	TuiSuspend(t)
+	           A0
+
+	VOID TuiSuspend(struct Tui *);
+
+   FUNCTION
+	Puts the terminal back as the Shell had it (as TuiClose() does)
+	but keeps t, so a command can run in it. Drawing calls still fill
+	the grid; nothing is sent until TuiResume().
+
+   INPUTS
+	t - from TuiOpen()
+
+   SEE ALSO
+	TuiKeyAfter(), TuiResume()
+
+tui.library/TuiTitle                                     tui.library/TuiTitle
+
+   NAME
+	TuiTitle -- the tab's title (0.1)
+
+   SYNOPSIS
+	TuiTitle(t, title)
+	         A0 A1
+
+	VOID TuiTitle(struct Tui *, CONST_STRPTR);
+
+   FUNCTION
+	Sets the title of the CTerm tab the program runs in. Does nothing
+	in a plain console.
+
+   INPUTS
+	t     - from TuiOpen()
+	title - the text, 0-terminated
+
+tui.library/TuiWait                                       tui.library/TuiWait
+
+   NAME
+	TuiWait -- wait for the next event (0.1)
+
+   SYNOPSIS
+	got = TuiWait(t, e, us, extra, sigs)
+	D0            A0 A1 D0  D1     A2
+
+	LONG TuiWait(struct Tui *, TuiEv *, LONG, ULONG, ULONG *);
+
+   FUNCTION
+	Flushes the screen, then waits until an event comes, the time runs
+	out or one of the extra signals comes. Ctrl-C to F are taken and
+	given as keys (TM_CTRL | 'c' ...), so quitting always works.
+
+	Events (e->type):
+	    TE_KEY     e->key: the character (Latin-1 / Unicode), or K_UP,
+	               K_DOWN, K_LEFT, K_RIGHT, K_HOME, K_END, K_PGUP,
+	               K_PGDN, K_INS, K_DEL, K_BS, K_TAB, K_ENTER, K_ESC,
+	               K_HELP, K_F(1)..K_F(12); with TM_SHIFT, TM_ALT,
+	               TM_CTRL or'ed in (K_BASE() takes them off)
+	    TE_MOUSE   (CTerm) e->mact: TB_PRESS, TB_RELEASE, TB_DRAG,
+	               TB_WHEELUP, TB_WHEELDOWN; e->col, e->row: the cell;
+	               e->mods: TM_*; e->secs, e->mics: when
+	    TE_PASTE   (CTerm) e->text, e->len: the pasted text, valid
+	               until the next event
+	    TE_RESIZE  Cols and Rows hold the new size: call TuiResized()
+	               and draw everything again
+	    TE_END     the terminal has gone: quit. Every later call
+	               returns TE_END too.
+
+   INPUTS
+	t     - from TuiOpen()
+	e     - filled in
+	us    - the longest wait in microseconds; -1 for ever, 0 not at
+	        all
+	extra - more signals to wake for, or 0
+	sigs  - set to which of extra came; may be NULL
+
+   RESULT
+	got - 1 with an event in e; 0 when the time ran out or an extra
+	      signal came (e->type is TE_NONE)
+
+   NOTES
+	The library keeps up to 64 events waiting.
+
+   SEE ALSO
+	TuiPoll(), TuiSignal()
