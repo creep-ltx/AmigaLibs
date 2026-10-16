@@ -1,5 +1,5 @@
 /* tuibench - how fast tui.library draws, to compare its builds (000, 020,
- * 060) on one machine. Run in a terminal; prints the times after:
+ * 040) on one machine. Run in a terminal; prints the times after:
  *
  *   draw    the grid filled N times (TuiPut, TuiFill, TuiPutUTF8 rows),
  *           nothing sent: the library's own work only

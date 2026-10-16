@@ -61,7 +61,7 @@ their own name there).
 ## Building
 
 `make` (bebbo's gcc in `~/opt/amiga`): the library three times, the glue and static libraries,
-`build/tuitest` / `tuitest_static` and `build/tuibench`. `make check060` proves the 060 build
+`build/tuitest` / `tuitest_static` and `build/tuibench`. `make check040` proves the 040 build
 has no 64-bit multiply or divide.
 
 **Which library to install** as `LIBS:tui.library`:
@@ -69,8 +69,8 @@ has no 64-bit multiply or divide.
 | File | For | Why its own |
 |---|---|---|
 | `build/000/tui.library` | 68000, 68010 (every Amiga) | no 32-bit multiply/divide in hardware |
-| `build/020/tui.library` | 68020, 68030, 68040, Emu68 | the fastest there (a 68030 runs 020 code as it is) |
-| `build/060/tui.library` | 68060 | the 020 build divides by constants with a 64-bit multiply, which the 060 only emulates (a trap each time); this one does not |
+| `build/020/tui.library` | 68020, 68030, Emu68 | the fastest there (a 68030 runs 020 code as it is) |
+| `build/040/tui.library` | 68040, 68060 | built for the 060: the 020 build divides by constants with a 64-bit multiply, which the 060 only emulates (a trap each time); this one does not, and runs on a 68040 as it is. The usual Amiga trio: 000, 020, 040 |
 
 Measured with `tuibench 20` in CTerm, FS-UAE (2026-10-16), ms, two runs averaged:
 
@@ -78,10 +78,10 @@ Measured with `tuibench 20` in CTerm, FS-UAE (2026-10-16), ms, two runs averaged
 |---|---|---|---|---|
 | 68EC020 | 000 | 7970 | 6260 | 17630 |
 | 68EC020 | **020** | **6470** | **6000** | 15820 |
-| 68EC020 | 060 | 6660 | 6020 | 15230 |
+| 68EC020 | 040 | 6660 | 6020 | 15230 |
 | 68030 | 000 | 8850 | 6270 | 17800 |
 | 68030 | **020** | **6900** | **6080** | 15640 |
-| 68030 | 060 | 7090 | 6080 | 15470 |
+| 68030 | 040 | 7090 | 6080 | 15470 |
 
 The 68000 build costs a 68020/030 about a quarter of the drawing speed, so it is not the one
 for them. A real 68060 was not measured (FS-UAE has none set up). After adding a call to `tui.sfd`: `make headers`.
@@ -131,7 +131,7 @@ checked for it.
 **Version numbers:** 0.x while the calls may still grow; `lib_Version` is 0 and
 `lib_Revision` counts (0.1, 0.2...), so programs open version 0 and check the revision.
 
-**0.2b2, 2026-10-16:** three builds (000, 020, 060), same code, measured above.
+**0.2b2, 2026-10-16:** three builds (000, 020, 060), same code, measured above. The 060 one was named 040 later the same day (for 68040 and 68060, the usual Amiga naming; same code); tuitest ran on it in FS-UAE as a 68040 and as a 68060.
 
 **0.2b1, 2026-10-16:** 24-bit colour, `TuiPutUTF8`, and the nearest character in a Latin-1
 console, tested in FS-UAE: CTerm on its own 256-colour screen (a smooth 24-bit gradient), a plain

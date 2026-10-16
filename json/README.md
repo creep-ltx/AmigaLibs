@@ -50,8 +50,8 @@ adds JSONTestSuite); `make fuzz` runs it under libFuzzer.
 | File | For |
 |---|---|
 | `build/000/json.library` | 68000, 68010 (every Amiga) |
-| `build/020/json.library` | 68020, 68030, 68040, Emu68 |
-| `build/060/json.library` | 68060 (no 64-bit multiply or divide, which the 060 only emulates) |
+| `build/020/json.library` | 68020, 68030, Emu68 |
+| `build/040/json.library` | 68040, 68060 (built for the 060: no 64-bit multiply or divide, which the 060 only emulates) |
 
 No FPU build: the library does no floating point.
 
@@ -85,9 +85,9 @@ No FPU build: the library does no floating point.
   JSONTestSuite (283 right, 0 wrong; everything read writes back and reads the same in all four
   writing modes), under ASan and UBSan; 7.2 million fuzzed inputs without a fault.
 - **In FS-UAE:** `jsontest` and `jsontest.rexx` all passed on the A1200 test machine (68EC020,
-  OS 3.2.1, the 020 build) and on the A600 (68000, Workbench 2.05, the 000 build); the guide's
-  examples ran as written.
-- **Not yet:** the real A1200; a 68060.
+  OS 3.2.1, the 020 build), on the same machine as a 68040 and as a 68060 (the 040 build), and on
+  the A600 (68000, Workbench 2.05, the 000 build); the guide's examples ran as written.
+- **Not yet:** the real A1200; a real 68040 or 68060.
 
 **Found on the way:** ARexx (OS 3.2 and 2.05) takes a function library's result string from
 **A0**. A result in A1 alone came out as garbage and then a "corrupt memory list" guru; the entry

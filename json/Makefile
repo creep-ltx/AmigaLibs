@@ -9,9 +9,10 @@
 #
 # The library, one per processor; install one as LIBS:json.library:
 #   build/000/json.library   every Amiga (68000 and up)
-#   build/020/json.library   68020, 68030, 68040 (and Emu68)
-#   build/060/json.library   68060: the 020 code without the 64-bit multiply
-#                            and divide the 060 has only in software
+#   build/020/json.library   68020, 68030 (and Emu68)
+#   build/040/json.library   68040 and 68060: built for the 060, without the
+#                           64-bit multiply and divide it has only in software
+#                           (the usual Amiga 000/020/040 trio)
 # No FPU build: the library does no floating point at all.
 #
 # The library links nothing but its own code (-nostartfiles -nostdlib); the
@@ -26,7 +27,12 @@ WARN    = -Os -noixemul -fomit-frame-pointer -fno-common -fbbb=- -Wall -Wno-poin
 CFLAGS  = $(WARN) -m68020
 LIBFLAGS = -fno-builtin -ffreestanding -DJSON_LIB
 NIX13   = $(AMIGA)/m68k-amigaos/libnix/lib/libnix13.a
-CPUS    = 000 020 060
+CPUS    = 000 020 040
+# the compiler's processor for each build: the 040 one is the 060's code,
+# which runs on a 68040 as it is
+CPU_000 = -m68000
+CPU_020 = -m68020
+CPU_040 = -m68060
 ARITH_000 = $(NIX13)
 OBJS    = lib json rexx
 
@@ -34,7 +40,7 @@ PCCC    = gcc -std=c99 -D_DEFAULT_SOURCE -Wall -Wextra -Wno-unused-parameter -g 
           -fsanitize=address,undefined -fno-sanitize-recover=all
 FUZZTIME ?= 240
 
-all: $(foreach c,$(CPUS),build/$(c)/json.library) build/jsontest check060
+all: $(foreach c,$(CPUS),build/$(c)/json.library) build/jsontest check040
 
 build/start.o: src/start.s
 	@mkdir -p build
@@ -44,20 +50,20 @@ build/start.o: src/start.s
 define LIBRARY
 build/$(1)/%.o: src/%.c src/port.h src/base.h src/version.h include/libraries/json.h
 	@mkdir -p build/$(1)
-	$$(CC) $$(WARN) -m68$(1) $$(LIBFLAGS) -c $$< -o $$@
+	$$(CC) $$(WARN) $$(CPU_$(1)) $$(LIBFLAGS) -c $$< -o $$@
 
 build/$(1)/json.library: build/start.o $(OBJS:%=build/$(1)/%.o)
-	$$(CC) -m68$(1) -noixemul -nostartfiles -nostdlib -s -Wl,-Map,build/$(1)/json.map -o $$@ $$^ $$(ARITH_$(1)) -lgcc
+	$$(CC) $$(CPU_$(1)) -noixemul -nostartfiles -nostdlib -s -Wl,-Map,build/$(1)/json.map -o $$@ $$^ $$(ARITH_$(1)) -lgcc
 	@! grep -E 'libnix|libstubs|libamiga' build/$(1)/json.map | grep -v -E '^LOAD |libnix13.a\(__u?(mul|div|mod)si[34].o\)' \
 	    || (echo "C library code got into $$@"; false)
 endef
 $(foreach c,$(CPUS),$(eval $(call LIBRARY,$(c))))
 
-# the 060 one must not have the 64-bit forms of muls.l/mulu.l/divs.l/divu.l
-check060: build/060/json.library
-	@! $(OBJDUMP) -m m68k:68060 -d $(OBJS:%=build/060/%.o) | grep -E '\s(mul|div)[su]l\s+[^ ]*,%?d[0-7],%?d[0-7]' \
-	    || (echo "build/060 has a 64-bit multiply or divide"; false)
-	@echo "build/060: no 64-bit multiply or divide"
+# the 040 one (for the 060 too) must not have the 64-bit forms of muls.l/mulu.l/divs.l/divu.l
+check040: build/040/json.library
+	@! $(OBJDUMP) -m m68k:68060 -d $(OBJS:%=build/040/%.o) | grep -E '\s(mul|div)[su]l\s+[^ ]*,%?d[0-7],%?d[0-7]' \
+	    || (echo "build/040 has a 64-bit multiply or divide"; false)
+	@echo "build/040: no 64-bit multiply or divide (runs on the 060)"
 
 # the Amiga test: every call through the library (tests/jsontest.c)
 build/jsontest: tests/jsontest.c include/libraries/json.h include/inline/json.h
@@ -84,4 +90,4 @@ fuzz:
 clean:
 	rm -rf build
 
-.PHONY: all headers clean check060 pctest fuzz
+.PHONY: all headers clean check040 pctest fuzz

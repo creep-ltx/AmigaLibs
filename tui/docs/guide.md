@@ -27,7 +27,7 @@ This guide explains how to use it. Every call is described in full in the
 ## What you need
 
 - AmigaOS 2.04 or newer, any 680x0.
-- `LIBS:tui.library`: the build for the processor (`build/000`, `020` or `060`, see the README).
+- `LIBS:tui.library`: the build for the processor (`build/000`, `020` or `040`, see the README).
 - The headers in `include/`: `libraries/tui.h` (types and constants), `proto/tui.h`,
   `inline/tui.h` (the calls, for gcc) and `clib/tui_protos.h` (the prototypes).
   `tui.sfd` describes the calls and their registers, for making headers for other languages

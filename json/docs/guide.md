@@ -24,7 +24,7 @@ and [tests/jsontest.rexx](../tests/jsontest.rexx) (ARexx).
 ## What you need
 
 - AmigaOS 2.04 or newer, any 680x0.
-- `LIBS:json.library`: the build for the processor (`build/000`, `020` or `060`, see the README).
+- `LIBS:json.library`: the build for the processor (`build/000`, `020` or `040`, see the README).
   There is no FPU build, because the library does no floating-point maths.
 - The headers in `include/`: `libraries/json.h` (types and constants), `proto/json.h`,
   `inline/json.h` (the calls, for gcc) and `clib/json_protos.h` (the prototypes). `json.sfd`
