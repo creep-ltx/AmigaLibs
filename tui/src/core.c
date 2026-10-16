@@ -1147,15 +1147,21 @@ static void asksize(Priv *p)
     }
 }
 
-/* an interactive console under in (0: Input()) and Output() */
-LONG TuiPossible(BPTR in)
+/* in and out (0: Input(), Output()) both an interactive console */
+static LONG possible(BPTR in, BPTR o)
 {
     struct FileHandle *fh;
-    BPTR o = Output();
     if (!in) in = Input();
+    if (!o) o = Output();
     if (!in || !o || !IsInteractive(in) || !IsInteractive(o)) return 0;
     fh = (struct FileHandle *)BADDR(in);
     return fh->fh_Type != NULL;         /* NIL: has none */
+}
+
+/* an interactive console under in (0: Input()) and Output() */
+LONG TuiPossible(BPTR in)
+{
+    return possible(in, 0);
 }
 
 static int iscterm(struct MsgPort *port)
@@ -1171,14 +1177,16 @@ static int iscterm(struct MsgPort *port)
 }
 
 /* raw mode, own screen, size; keys from in (0: Input(); a program whose
- * Input() is a pipe gives the console opened as "*"). NULL: no terminal */
-struct Tui *TuiOpen(BPTR in)
+ * Input() is a pipe gives the console opened as "*"), drawn on out (0:
+ * Output(); 0.4: a program whose output is captured - fzf in backquotes -
+ * gives the console opened as "*"). NULL: no terminal */
+struct Tui *TuiOpenIO(BPTR in, BPTR out)
 {
     Priv *p;
-    if (!TuiPossible(in)) return NULL;
+    if (!possible(in, out)) return NULL;
     if (!(p = AllocVec(sizeof(*p), MEMF_ANY | MEMF_CLEAR))) return NULL;
     p->tin = in ? in : Input();
-    p->tout = Output();
+    p->tout = out ? out : Output();
     p->conport = ((struct FileHandle *)BADDR(p->tin))->fh_Type;
     p->pub.CTerm = iscterm(p->conport);
     p->pub.Cols = 80;
@@ -1202,6 +1210,11 @@ fail:
     if (p->rport) DeleteMsgPort(p->rport);
     FreeVec(p);
     return NULL;
+}
+
+struct Tui *TuiOpen(BPTR in)
+{
+    return TuiOpenIO(in, 0);
 }
 
 /* everything back as it was */

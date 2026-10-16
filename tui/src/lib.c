@@ -78,6 +78,7 @@ static LONG L_PutUTF8(REG(a0, struct Tui *t), REG(d0, LONG col), REG(d1, LONG ro
 static ULONG L_Signal(REG(a0, struct Tui *t)) { return TuiSignal(t); }
 static LONG L_Poll(REG(a0, struct Tui *t), REG(a1, TuiEv *e)) { return TuiPoll(t, e); }
 static LONG L_KeyWaiting(REG(a0, struct Tui *t)) { return TuiKeyWaiting(t); }
+static struct Tui *L_OpenIO(REG(d1, BPTR in), REG(d2, BPTR out)) { return TuiOpenIO(in, out); }
 
 /* in tui.sfd's order, after exec's four: never reorder, only add */
 static const APTR functable[] = {
@@ -92,6 +93,8 @@ static const APTR functable[] = {
     (APTR)L_PutUTF8,
     /* 0.3 */
     (APTR)L_Signal, (APTR)L_Poll, (APTR)L_KeyWaiting,
+    /* 0.4 */
+    (APTR)L_OpenIO,
     (APTR)-1
 };
 

@@ -116,4 +116,8 @@ typedef ULONG _sfdc_vararg;
       LP1(0xa8, LONG, TuiKeyWaiting , struct Tui *, ___t, a0,\
       , TUI_BASE_NAME)
 
+#define TuiOpenIO(___in, ___out) \
+      LP2(0xae, struct Tui *, TuiOpenIO , BPTR, ___in, d1, BPTR, ___out, d2,\
+      , TUI_BASE_NAME)
+
 #endif /* !_INLINE_TUI_H */
