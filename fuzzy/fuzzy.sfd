@@ -1,0 +1,36 @@
+==id $Id: fuzzy.sfd 0.1 $
+* fuzzy.library: fuzzy matching, and the FuzzyFind index.
+* The order below is the library's jump table: never move a line,
+* only add new ones at the end (and raise the revision: 0.2, 0.3...).
+* The first entry (offset -30) is ARexx's: ARexx calls it with a RexxMsg
+* in A0 and takes an error code in D0 and a result string in A0, so it
+* is not a C call; it must stay first.
+==base _FuzzyBase
+==basetype struct Library *
+==libname fuzzy.library
+==bias 30
+==public
+==include <exec/types.h>
+==include <dos/dos.h>
+==include <libraries/fuzzy.h>
+* --- 0.1 ---
+==private
+LONG FuzzyRexx(APTR msg) (a0)
+==public
+FuzzyPattern * FuzzyPrepare(CONST_STRPTR pattern, ULONG flags) (a0,d0)
+VOID FuzzyFreePattern(FuzzyPattern * pattern) (a0)
+LONG FuzzyScore(FuzzyPattern * pattern, CONST_STRPTR text, LONG len, UWORD * pos, LONG maxpos) (a0,a1,d0,a2,d1)
+LONG FuzzyIndexPath(STRPTR buf, LONG size) (a0,d0)
+struct FuzzyIndex * FuzzyOpenIndex(CONST_STRPTR name, LONG * error) (a0,a1)
+VOID FuzzyCloseIndex(struct FuzzyIndex * index) (a0)
+LONG FuzzyNextEntry(struct FuzzyIndex * index, struct FuzzyEntry * entry) (a0,a1)
+VOID FuzzyRewind(struct FuzzyIndex * index) (a0)
+CONST_STRPTR FuzzyVolume(struct FuzzyIndex * index, LONG n, ULONG * date) (a0,d0,a1)
+struct FuzzyResults * FuzzySearch(struct FuzzyIndex * index, CONST_STRPTR pattern, ULONG flags, LONG max) (a0,a1,d0,d1)
+VOID FuzzyFreeResults(struct FuzzyResults * results) (a0)
+FuzzyWriter * FuzzyNewIndex(CONST_STRPTR name, LONG * error) (a0,a1)
+LONG FuzzyAddVolume(FuzzyWriter * writer, CONST_STRPTR name, ULONG date) (a0,a1,d0)
+LONG FuzzyAddEntry(FuzzyWriter * writer, struct FuzzyEntry * entry) (a0,a1)
+LONG FuzzyEndIndex(FuzzyWriter * writer, LONG keep) (a0,d0)
+CONST_STRPTR FuzzyErrorText(LONG error) (d0)
+==end
