@@ -1,0 +1,41 @@
+==id $Id: utf8.sfd 0.1 $
+* utf8.library: UTF-8 text on a Latin-1 Amiga.
+* The order below is the library's jump table: never move a line,
+* only add new ones at the end (and raise the revision: 0.2, 0.3...).
+* The first entry (offset -30) is ARexx's: ARexx calls it with a RexxMsg
+* in A0 and takes an error code in D0 and a result string in A0/A1, so it
+* is not a C call; it must stay first.
+==base _Utf8Base
+==basetype struct Library *
+==libname utf8.library
+==bias 30
+==public
+==include <exec/types.h>
+==include <libraries/utf8.h>
+* --- 0.1 ---
+==private
+LONG Utf8Rexx(APTR msg) (a0)
+==public
+LONG Utf8Decode(CONST_STRPTR s, LONG len, ULONG * cp) (a0,d0,a1)
+LONG Utf8Encode(ULONG cp, STRPTR buf) (d0,a0)
+LONG Utf8Check(CONST_STRPTR s, LONG len) (a0,d0)
+LONG Utf8Valid(CONST_STRPTR s, LONG len) (a0,d0)
+LONG Utf8Length(CONST_STRPTR s, LONG len) (a0,d0)
+LONG Utf8CharWidth(ULONG cp) (d0)
+LONG Utf8Width(CONST_STRPTR s, LONG len) (a0,d0)
+LONG Utf8Fit(CONST_STRPTR s, LONG len, LONG cols, LONG * width) (a0,d0,d1,a1)
+LONG Utf8Next(CONST_STRPTR s, LONG len, LONG pos) (a0,d0,d1)
+LONG Utf8Prev(CONST_STRPTR s, LONG len, LONG pos) (a0,d0,d1)
+ULONG Utf8Class(ULONG cp) (d0)
+ULONG Utf8Upper(ULONG cp) (d0)
+ULONG Utf8Lower(ULONG cp) (d0)
+ULONG Utf8NoAccent(ULONG cp) (d0)
+LONG Utf8Compare(CONST_STRPTR a, LONG alen, CONST_STRPTR b, LONG blen, ULONG flags) (a0,d0,a1,d1,d2)
+LONG Utf8Find(CONST_STRPTR s, LONG len, CONST_STRPTR pat, LONG plen, ULONG flags, LONG * matchlen) (a0,d0,a1,d1,d2,a2)
+LONG Utf8Case(CONST_STRPTR s, LONG len, STRPTR buf, LONG size, ULONG flags) (a0,d0,a1,d1,d2)
+LONG Utf8Normalize(CONST_STRPTR s, LONG len, STRPTR buf, LONG size, ULONG flags) (a0,d0,a1,d1,d2)
+LONG Utf8ToCharset(CONST_STRPTR s, LONG len, STRPTR buf, LONG size, LONG cs, ULONG flags) (a0,d0,a1,d1,d2,d3)
+LONG Utf8FromCharset(CONST_STRPTR s, LONG len, STRPTR buf, LONG size, LONG cs) (a0,d0,a1,d1,d2)
+LONG Utf8Charset(CONST_STRPTR name) (a0)
+CONST_STRPTR Utf8CharsetName(LONG cs) (d0)
+==end

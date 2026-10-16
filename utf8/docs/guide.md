@@ -1,0 +1,313 @@
+# utf8.library programmer's guide
+
+utf8.library lets an Amiga program work with **UTF-8**, the text of the web, of mail, of every
+modern computer, while the Amiga itself speaks **Latin-1**. It counts, measures, cuts, searches,
+compares and converts UTF-8 text, and turns it into and out of Latin-1 and thirteen other 8-bit
+sets. It works from C (and any language that can call a library) and from **ARexx**.
+
+This guide explains how to use it. Every call is described in full in the
+[reference](reference.md). Complete working programs: [tests/first.c](../tests/first.c) (this
+guide's first program), [tests/utf8test.c](../tests/utf8test.c) (every call, C) and
+[tests/utf8test.rexx](../tests/utf8test.rexx) (ARexx).
+
+- [What you need](#what-you-need)
+- [The first program](#the-first-program)
+- [How text is passed](#how-text-is-passed)
+- [Bytes, code points, characters, columns](#bytes-code-points-characters-columns)
+- [Text in a terminal](#text-in-a-terminal)
+- [An editor's cursor](#an-editors-cursor)
+- [Case, accents, searching and sorting](#case-accents-searching-and-sorting)
+- [Character sets](#character-sets)
+- [Accents together or apart](#accents-together-or-apart)
+- [ARexx](#arexx)
+- [Speed](#speed)
+- [Versions](#versions)
+- [Rules and traps](#rules-and-traps)
+
+## What you need
+
+- AmigaOS 2.04 or newer, any 680x0. The library calls nothing from the OS but exec, so it should
+  also run on 1.3, but it has not been tested there.
+- `LIBS:utf8.library`: the build for the processor (`build/000`, `020` or `060`, see the README).
+- The headers in `include/`: `libraries/utf8.h` (constants), `proto/utf8.h`, `inline/utf8.h` (the
+  calls, for gcc) and `clib/utf8_protos.h` (the prototypes). `utf8.sfd` describes the calls and
+  their registers, for making headers for other languages (`sfdc` or `fd2pragma`).
+- Your program's stack: the library's deepest call uses under 0.5 KB.
+
+## The first program
+
+Three lines of UTF-8, shown on an Amiga console, measured, and searched:
+
+```c
+#include <stdio.h>
+#include <proto/exec.h>
+#include <proto/utf8.h>
+
+struct Library *Utf8Base;
+
+int main(void)
+{
+    static const char *lines[] = {
+        "G\xc3\xb6teborg \xe2\x80\x93 \xe2\x80\x9cLittle London\xe2\x80\x9d, 5 \xe2\x82\xac",
+        "\xc5\x81\xc3\xb3" "d\xc5\xba, Krak\xc3\xb3w, Gda\xc5\x84sk",
+        "\xe6\x9d\xb1\xe4\xba\xac means Tokyo \xf0\x9f\x97\xbc",
+    };
+    char shown[80];
+    int i;
+
+    if (!(Utf8Base = OpenLibrary(UTF8NAME, 0))) {
+        printf("needs utf8.library\n");
+        return 20;
+    }
+    for (i = 0; i < 3; i++) {
+        Utf8ToCharset(lines[i], -1, shown, sizeof(shown), U8CS_LATIN1, 0);
+        printf("%-34s %2ld characters, %2ld columns\n", shown,
+               (long)Utf8Length(lines[i], -1), (long)Utf8Width(lines[i], -1));
+    }
+    if (Utf8Find(lines[0], -1, "goteborg", -1, U8F_NOCASE | U8F_NOACCENT, NULL) >= 0)
+        printf("\"goteborg\" found without case or accents\n");
+    CloseLibrary(Utf8Base);
+    return 0;
+}
+```
+
+Built with `m68k-amigaos-gcc -noixemul -Wno-pointer-sign -Iinclude first.c -o first`, it prints
+(on an A1200 in FS-UAE, 2026-10-17):
+
+```
+Göteborg - "Little London", 5 EUR  31 characters, 31 columns
+Lódz, Kraków, Gdansk               20 characters, 20 columns
+?? means Tokyo ?                   16 characters, 19 columns
+"goteborg" found without case or accents
+```
+
+The Amiga's Latin-1 has ö and ó but not –, “ ”, €, Ł, ź or ń: Utf8ToCharset() gives the nearest
+it has (- " EUR L z n). Tokyo's two characters and the tower emoji have nothing near, so they
+are `?`, but they still take two columns each, which is why the third line is 16 characters and
+19 columns.
+
+## How text is passed
+
+Every call takes text the same way: a pointer and a **length in bytes**, where a length below 0
+means "up to the 0 byte". So a whole C string is `(s, -1)`, and a part of a buffer is `(buf + 10,
+25)` with no 0 needed.
+
+**A byte that is not UTF-8 is a Latin-1 letter.** UTF-8 has strict rules; a byte that breaks
+them (a stray `0xE5` from an Amiga file, a sequence cut short) is not an error but the Latin-1
+character with that number, as it would be on the Amiga. So `"G\xf6teborg"` (Latin-1) and
+`"G\xc3\xb6teborg"` (UTF-8) are both Göteborg to every call: they have the same length, compare
+equal, and convert to the same Latin-1. A program can hand the library text without knowing
+which it is.
+
+**The calls that write text** (Utf8Case, Utf8Normalize, Utf8ToCharset, Utf8FromCharset) all work
+like C's `snprintf`: they write at most `size - 1` bytes and a 0, and return the length the whole
+result needs. Their output is never cut in the middle of a character. Measure first if the
+result's size is not known:
+
+```c
+LONG n = Utf8FromCharset(amigatext, -1, NULL, 0, U8CS_LATIN1);     /* how big */
+STRPTR u8 = AllocVec(n + 1, MEMF_ANY);
+if (u8) Utf8FromCharset(amigatext, -1, u8, n + 1, U8CS_LATIN1);    /* and write */
+```
+
+UTF-8 output from the library is always good UTF-8, whatever came in.
+
+## Bytes, code points, characters, columns
+
+Four different counts, and mixing them up is the classic UTF-8 bug:
+
+| Text | Bytes | Code points | Characters | Columns |
+|---|---|---|---|---|
+| `abc` | 3 | 3 | 3 | 3 |
+| `Göteborg` | 9 | 8 | 8 | 8 |
+| `é` written as e + accent | 3 | 2 | 1 | 1 |
+| `日本` | 6 | 2 | 2 | 4 |
+| 🇸🇪 (a flag) | 8 | 2 | 1 | 2 |
+| 👨‍👩‍👧 (a family) | 18 | 5 | 1 | 2 |
+
+- **Bytes:** `strlen()`. For buffers and file sizes.
+- **Code points:** what Utf8Decode() steps through. Unicode's numbers.
+- **Characters:** what a reader counts, and what the cursor should move over. Utf8Length(),
+  Utf8Next(), Utf8Prev(). A letter with its accents, a flag, an emoji family is one.
+- **Columns:** how much room it takes on a terminal or in any fixed-width font. Utf8Width(),
+  Utf8Fit(), Utf8CharWidth(). Chinese, Japanese and Korean characters and most emoji take two.
+
+## Text in a terminal
+
+A program drawing in a console or terminal window (CTerm, or anything built on tui.library) needs
+columns, not bytes:
+
+```c
+LONG w = Utf8Width(title, -1);
+LONG col = (80 - w) / 2;                                   /* centred */
+
+LONG fit = Utf8Fit(line, -1, 80, &w);                      /* what fits in 80 columns */
+Write(out, line, fit);                                     /* never half a character */
+
+LONG at = Utf8Fit(line, -1, mousecol, NULL);               /* the byte a click landed on */
+```
+
+Utf8Width() counts controls (tab, escape, line ends) as 0 columns: where a tab stops is the
+program's own business.
+
+## An editor's cursor
+
+Utf8Next() and Utf8Prev() move by whole characters, so the cursor never lands inside one and
+backspace removes an é whether it is one code point or two:
+
+```c
+pos = Utf8Next(text, len, pos);                    /* cursor right */
+pos = Utf8Prev(text, len, pos);                    /* cursor left */
+
+start = Utf8Prev(text, len, pos);                  /* backspace: remove start..pos */
+memmove(text + start, text + pos, len - pos);
+len -= pos - start;
+pos = start;
+```
+
+For moving by words, Utf8Class() tells letters from spaces and punctuation in every script; a word
+is a run of characters with `UC_WORD`:
+
+```c
+ULONG c;
+while (pos < len) {                                /* to the end of this word */
+    Utf8Decode(text + pos, len - pos, &c);
+    if (!(Utf8Class(c) & UC_WORD)) break;
+    pos = Utf8Next(text, len, pos);
+}
+```
+
+## Case, accents, searching and sorting
+
+- **One character:** Utf8Upper(), Utf8Lower(), Utf8NoAccent() (é to e, Ł to L, Й to И).
+- **A whole text:** Utf8Case() with `U8F_UPPER` or `U8F_LOWER`.
+- **Searching:** Utf8Find() gives where a text is found and how many bytes the match is, with
+  `U8F_NOCASE` and `U8F_NOACCENT` if wanted. With both, `"malmo"` finds `"Malmö"`. Use the length
+  it gives, not the search text's, since `"o"` matching `"ö"` is one byte against two.
+- **Comparing and sorting:** Utf8Compare(), with the same flags. The order is Unicode's numbers,
+  good for file names; it is not a dictionary's alphabet for any one language.
+
+Both Utf8Find() and Utf8Compare() take an accent written as one character and as a letter plus a
+separate mark as the same, so text from a Mac matches text from an Amiga.
+
+## Character sets
+
+The Amiga's own text is **Latin-1** (ISO-8859-1). Other Amigas and other computers have used other
+8-bit sets, and the library knows fourteen:
+
+| Set | Number | Used by |
+|---|---|---|
+| ISO-8859-1 | `U8CS_LATIN1` | the Amiga, western Europe |
+| ISO-8859-2 | `U8CS_LATIN2` | Central Europe: Polish, Czech, Hungarian Amigas |
+| ISO-8859-15 | `U8CS_LATIN9` | Latin-1 with € |
+| ISO-8859-5 | `U8CS_CYRILLIC` | Cyrillic |
+| ISO-8859-7 | `U8CS_GREEK` | Greek |
+| ISO-8859-9 | `U8CS_LATIN5` | Turkish |
+| windows-1250, 1251, 1252 | `U8CS_CP1250`, `CP1251`, `CP1252` | Windows text files |
+| IBM437 | `U8CS_CP437` | the PC's own: BBSes, ANSI art, DOS |
+| IBM850, IBM866 | `U8CS_CP850`, `CP866` | DOS western and Cyrillic |
+| KOI8-R | `U8CS_KOI8R` | Russian |
+| macintosh | `U8CS_MACROMAN` | old Macintosh files |
+| US-ASCII | `U8CS_ASCII` | 7-bit: everything else as its nearest |
+| UTF-8 | `U8CS_UTF8` | a checked copy, so one code path serves every set |
+
+- **UTF-8 in, Amiga out:** `Utf8ToCharset(text, len, buf, size, U8CS_LATIN1, 0)`. What Latin-1
+  lacks becomes the nearest it has. With `U8F_STRICT` it becomes `?` instead, for when a guess
+  would be wrong (a file name to write back).
+- **Amiga in, UTF-8 out:** `Utf8FromCharset(text, len, buf, size, U8CS_LATIN1)`.
+- **A set by its name:** a mail's `charset=iso-8859-2`, an HTTP header, an FTP server's `UTF8`:
+  `Utf8Charset("iso-8859-2")` gives `U8CS_LATIN2`, -1 for a name it does not know.
+  Utf8CharsetName() gives the names back, for a menu of sets.
+- **Not sure what a file is:** Utf8Check() says `U8_ASCII`, `U8_UTF8`, or `U8_LATIN1` (has bytes
+  that are not UTF-8, so it is 8-bit text).
+
+## Accents together or apart
+
+Unicode can write å two ways: as one character (U+00E5), the way Amigas, Windows and the web do,
+or as an a followed by a combining ring (U+0061 U+030A), the way Macs may store file names. They
+look the same but are different bytes.
+
+The library treats the two as the same everywhere it compares (Utf8Compare, Utf8Find) and puts
+the accent on its letter when converting (Utf8ToCharset), so a Mac's file name still becomes
+Latin-1's å. Utf8Normalize() writes text either way: `U8F_COMPOSE` puts every accent on its
+letter, `U8F_DECOMPOSE` takes them all off. This covers Latin, Greek, Cyrillic, Japanese kana and
+Korean Hangul, and gives the same as Unicode's NFC and NFD there.
+
+## ARexx
+
+The library is also an ARexx function library:
+
+```rexx
+CALL ADDLIB('utf8.library', 0, -30, 0)
+SAY UTF8TO(UTF8UPPER(text))                    /* show UTF-8 text on the Amiga */
+```
+
+ARexx's own LENGTH, SUBSTR, LEFT, POS and UPPER count bytes and know only Latin-1. These count
+whole characters (from 1, as ARexx does) and know all of Unicode:
+
+| Function | Gives |
+|---|---|
+| `UTF8LEN(text)` | how many characters |
+| `UTF8WIDTH(text)` | how many columns |
+| `UTF8LEFT(text, columns)` | the start that fits in the columns |
+| `UTF8SUBSTR(text, start, [count])` | characters from start (1 = the first), count of them or all the rest |
+| `UTF8UPPER(text)`, `UTF8LOWER(text)` | in upper or lower case |
+| `UTF8TO(text, [set])` | UTF-8 into a set (Latin-1 if none given), the nearest for what it lacks |
+| `UTF8FROM(text, [set])` | a set's text (Latin-1 if none) into UTF-8 |
+| `UTF8NORMALIZE(text, ['NFD'])` | accents on their letters, or with NFD apart |
+| `UTF8CHECK(text)` | `ASCII`, `UTF8` or `LATIN1` |
+| `UTF8FIND(text, find, ['NOCASE NOACCENT'])` | the character where find starts, 0 if nowhere |
+| `UTF8COMPARE(a, b, ['NOCASE NOACCENT'])` | -1, 0 or 1 |
+| `UTF8CHAR(code, [code...])` | the characters as UTF-8; codes as `229`, `U+00E5`, `0xE5` or `$E5` |
+| `UTF8CODE(text, [n])` | the n-th code point (from 1) as a number |
+
+A set is named as for Utf8Charset(): `'latin2'`, `'CP437'`, `'windows-1252'`. A wrong argument
+gives ARexx error 18, a missing one error 17.
+
+## Speed
+
+Measured with `tests/utf8test` (4 KB of text, each call for 2 seconds), FS-UAE A1200, 68EC020 at
+14 MHz with fast RAM, OS 3.2.1, the 020 build:
+
+| Call | Swedish | English | Japanese + emoji |
+|---|---|---|---|
+| Utf8Width | 132 KB/s | 123 KB/s | 30 KB/s |
+| Utf8Length | 162 KB/s | 153 KB/s | 39 KB/s |
+| Utf8ToCharset (Latin-1) | 129 KB/s | 193 KB/s | 9 KB/s |
+| Utf8Find (NOCASE) | 128 KB/s | 205 KB/s | 9 KB/s |
+
+A plain C loop that only adds up the bytes ran at 444 KB/s on the same machine. A 68000 (A600)
+is about four times slower, a 68040 about four times faster. Latin and Cyrillic text takes
+quick paths; Chinese, Japanese, Korean and emoji go through the tables and are slower.
+
+## Versions
+
+While the library is 0.x, `lib_Version` is 0 and the revision counts up as calls are added
+(0.1, 0.2...). Open it with version 0 and check `lib_Revision` before using a call newer than 0.1:
+the reference gives each call's revision. From 1.0 on the version goes up instead, as usual.
+
+## Rules and traps
+
+- **`Utf8Base` is the library base** (`struct Library *Utf8Base;`, as `proto/utf8.h` expects).
+- **Lengths are bytes**, everywhere, also where the call counts characters or columns.
+- **Positions are bytes.** Utf8Next(), Utf8Prev() and Utf8Find() give byte positions; ARexx's
+  functions give character positions from 1.
+- **A cut buffer:** a file read in pieces may end in the middle of a character. Hold back the
+  bytes of a character cut short and put them in front of the next piece:
+
+  ```c
+  /* k: how many bytes at the end of buf (len bytes) start a character cut short */
+  LONG k = 0, i;
+  for (i = 1; i <= 3 && i <= len; i++) {
+      UBYTE b = buf[len - i];
+      if ((b & 0xC0) == 0x80) continue;                 /* inside a character */
+      if (b >= 0xC2 && b <= 0xF4 && i < (b < 0xE0 ? 2 : b < 0xF0 ? 3 : 4)) k = i;
+      break;
+  }
+  ```
+- **`char` and `STRPTR`:** gcc warns about signedness when a `char *` is passed, as with every
+  Amiga call that takes a `STRPTR`. `-Wno-pointer-sign` quietens it.
+- **One letter, one letter:** case and accent calls never change the number of characters, so ß
+  has no upper case here (Unicode's is SS) and ﬁ stays one ligature.
+- **The tables are Unicode 16.0** (2024): widths, case and classes for every code point, checked
+  against Python's Unicode database for all 1,114,112 of them.
