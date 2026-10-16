@@ -8,8 +8,8 @@ One folder per library, each with its own README, version and change log.
 | [tui/](tui/) | **tui.library**: the toolkit for programs that live inside the terminal (a CTerm tab or pane, or any console window): a screen grid that sends only what changed, 16/256/24-bit colour, UTF-8 with Latin-1 stand-ins, keys, mouse, pastes, resizing, pictures (sixel) | 0.3 |
 
 Every library comes with a **programmer's guide** (`docs/guide.md`: how to use it, a working first
-program, the traps) and an **Autodoc** (`docs/<name>.doc`: every call in full, the Amiga's standard
-reference format). tui.library: [guide](tui/docs/guide.md), [Autodoc](tui/docs/tui.doc).
+program, the traps) and a **reference** (`docs/reference.md`: every call in full, with its registers,
+laid out like Commodore's Autodocs). tui.library: [guide](tui/docs/guide.md), [reference](tui/docs/reference.md).
 
 Only libraries live here. Handlers, devices, datatypes and programs each have their own repository.
 

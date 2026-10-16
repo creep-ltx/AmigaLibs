@@ -31,7 +31,7 @@ UTF-8.
 ## Using it
 
 **For programmers:** the [programmer's guide](docs/guide.md) explains how to use it, with a
-working first program, and [docs/tui.doc](docs/tui.doc) is the Autodoc: every call in full.
+working first program, and the [reference](docs/reference.md) describes every call in full.
 
 **New programs** call the library directly:
 
@@ -107,7 +107,7 @@ for them. A real 68060 was not measured (FS-UAE has none set up). After adding a
 | `src/lib.c`, `src/start.s` | the library: Resident tag, open/close/expunge, jump table |
 | `src/glue.c` | the old names' open/close, the library opened on demand |
 | `docs/guide.md` | the programmer's guide |
-| `docs/tui.doc` | the Autodoc: every call |
+| `docs/reference.md` | every call in full |
 | `tests/tuitest.c` | draws everything, logs events: `tuitest` or `tuitest SECS` |
 
 ## State

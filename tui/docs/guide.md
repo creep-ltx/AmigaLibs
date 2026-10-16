@@ -5,8 +5,8 @@ Shell window (CON:). The program gets no window or screen of its own. It draws t
 cells and reads keys, the mouse and pastes, and the library turns that into the escape sequences the
 terminal understands.
 
-This guide explains how to use it. Every call is described in full in the Autodoc,
-[tui.doc](tui.doc). A complete working program is [tests/tuitest.c](../tests/tuitest.c).
+This guide explains how to use it. Every call is described in full in the
+[reference](reference.md). A complete working program is [tests/tuitest.c](../tests/tuitest.c).
 
 - [What you need](#what-you-need)
 - [The first program](#the-first-program)
