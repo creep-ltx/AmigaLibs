@@ -1,0 +1,348 @@
+# json.library programmer's guide
+
+json.library reads, builds and writes **JSON**, the text format web services and many settings
+files use. It works from C (and any language that can call a library) and from **ARexx**.
+
+This guide explains how to use it. Every call is described in full in the
+[reference](reference.md). Complete working programs: [tests/jsontest.c](../tests/jsontest.c) (C)
+and [tests/jsontest.rexx](../tests/jsontest.rexx) (ARexx).
+
+- [What you need](#what-you-need)
+- [The first program](#the-first-program)
+- [How it works](#how-it-works)
+- [Reading](#reading)
+- [Paths](#paths)
+- [Values](#values)
+- [Numbers without floating point](#numbers-without-floating-point)
+- [Text: UTF-8 and Latin-1](#text-utf-8-and-latin-1)
+- [Building and writing](#building-and-writing)
+- [Settings files: relaxed reading](#settings-files-relaxed-reading)
+- [ARexx](#arexx)
+- [Versions](#versions)
+- [Rules and traps](#rules-and-traps)
+
+## What you need
+
+- AmigaOS 2.04 or newer, any 680x0.
+- `LIBS:json.library`: the build for the processor (`build/000`, `020` or `060`, see the README).
+  There is no FPU build, because the library does no floating-point maths.
+- The headers in `include/`: `libraries/json.h` (types and constants), `proto/json.h`,
+  `inline/json.h` (the calls, for gcc) and `clib/json_protos.h` (the prototypes). `json.sfd`
+  describes the calls and their registers, for making headers for other languages (`sfdc` or
+  `fd2pragma`).
+- Your program's stack: the library's deepest call uses under 1 KB.
+
+## The first program
+
+Reading the weather from a JSON text:
+
+```c
+#include <stdio.h>
+#include <proto/exec.h>
+#include <proto/json.h>
+
+struct Library *JsonBase;
+
+int main(void)
+{
+    static const char text[] =
+        "{ \"city\": \"G\xc3\xb6teborg\", \"temp\": 8.25, \"wind\": [\"SW\", 7] }";
+    struct JsonError err;
+    JsonDoc *doc;
+    JsonNode *root;
+    char city[40];
+
+    if (!(JsonBase = OpenLibrary(JSONNAME, 0))) {
+        printf("needs json.library\n");
+        return 20;
+    }
+    if (!(doc = JsonParse(text, -1, 0, &err))) {
+        printf("line %ld col %ld: %s\n", (long)err.Line, (long)err.Col, err.Message);
+        CloseLibrary(JsonBase);
+        return 10;
+    }
+    root = JsonRoot(doc);
+    JsonLatin1(JsonGet(root, "city"), city, sizeof(city));          /* Amiga text */
+    printf("%s: %ld.%02ld degrees, wind %ld m/s\n", city,
+           (long)JsonScaled(JsonGet(root, "temp"), 2, 0) / 100,       /* 825 */
+           (long)JsonScaled(JsonGet(root, "temp"), 2, 0) % 100,
+           (long)JsonInt(JsonFind(root, "wind[1]"), 0));             /* 7 */
+    JsonFree(doc);                                                   /* every node with it */
+    CloseLibrary(JsonBase);
+    return 0;
+}
+```
+
+It prints `Göteborg: 8.25 degrees, wind 7 m/s`. Build with bebbo's gcc:
+`m68k-amigaos-gcc -Os -noixemul -Wno-pointer-sign -I<json>/include weather.c -o weather`.
+
+## How it works
+
+**A document holds a tree of nodes.** `JsonParse` (from text) or `JsonLoad` (from a file) returns
+a `JsonDoc *`. Inside it, every value is a `JsonNode *`: an object, an array, a string, a number,
+true/false (a bool) or null. Objects and arrays have members; an object's members have names.
+`JsonRoot(doc)` is the top value.
+
+**The document owns everything.** Nodes are never freed one by one: `JsonFree(doc)` frees the
+whole tree at once. A node pointer is valid until its document is freed. Strings the library hands
+out (`JsonString`, `JsonName`, `JsonNumText`) live in the document too.
+
+**NULL is always safe.** Every call accepts NULL for a node and answers "nothing" (`JT_NONE`,
+NULL, 0 or the default you give). So a chain like
+`JsonInt(JsonGet(JsonGet(root, "a"), "b"), -1)` needs no checks in between: if anything is
+missing, the answer is -1.
+
+**Small machines first.** The library never calls itself recursively, so a deeply nested file
+cannot overflow the stack. It does no floating-point maths and no 32-bit multiply or divide in its
+loops (a 68000 has neither), and it gets memory in a few big blocks per document, not per node.
+
+## Reading
+
+```c
+JsonDoc *JsonParse(text, len, flags, &err);     /* len -1: up to the 0 */
+JsonDoc *JsonLoad("PROGDIR:settings.json", flags, &err);
+```
+
+Both return NULL on failure and fill in `struct JsonError` (pass NULL if you do not need it):
+
+| Field | |
+|---|---|
+| `Message` | what was wrong, in English: "expected , or }", "a string is not closed", "text that is not UTF-8"... |
+| `Line`, `Col` | where, from 1 (`Col` counts bytes) |
+| `Pos` | the byte, from 0 |
+
+Without flags the text must be strict JSON (RFC 8259). The library passes all 283 must-accept and
+must-refuse cases of [JSONTestSuite](https://github.com/nst/JSONTestSuite).
+
+**Walking** a tree:
+
+| Call | Gives |
+|---|---|
+| `JsonType(n)` | `JT_OBJECT`, `JT_ARRAY`, `JT_STRING`, `JT_NUMBER`, `JT_BOOL`, `JT_NULL`, or `JT_NONE` for NULL |
+| `JsonGet(object, "name")` | a member by name (if a name comes twice, the last one, as JavaScript does) |
+| `JsonAt(array, i)` | the i-th item, from 0; negative counts from the end (-1 is the last) |
+| `JsonFind(node, "a.b[2].c")` | a node by path (below) |
+| `JsonCount(n)` | how many members an object or array has |
+| `JsonFirst(n)`, `JsonNext(n)` | the members one by one |
+| `JsonParent(n)` | the object or array a node is in |
+| `JsonName(n)` | an object member's name |
+
+Every member of an object, in order:
+
+```c
+for (m = JsonFirst(obj); m; m = JsonNext(m))
+    printf("%s is of type %ld\n", JsonName(m), (long)JsonType(m));
+```
+
+`JsonFirst`/`JsonNext` is the fast way through a big array: `JsonAt(array, i)` walks from the start
+each time.
+
+## Paths
+
+`JsonFind(node, path)` goes several steps at once:
+
+| Path | Means |
+|---|---|
+| `weather.city` | the member `city` of the member `weather` |
+| `days[0]` | the first item of the array `days` |
+| `days[-1].temp` | `temp` in the last item of `days` |
+| `["a.b"]` | a member whose name has dots or brackets in it (`\"` and `\\` inside) |
+| (empty) | the node itself |
+
+A path that does not lead anywhere gives NULL, never a crash.
+
+## Values
+
+| Call | For | Gives |
+|---|---|---|
+| `JsonString(n)` | a string | the text, UTF-8, 0-terminated; NULL for anything else |
+| `JsonLength(n)` | a string or number | its length in bytes (a string may hold a 0 byte, written `\u0000`) |
+| `JsonLatin1(n, buf, size)` | a string or number | the text as Amiga text (below) |
+| `JsonInt(n, def)` | a number | the nearest whole number (8.5 is 9, -8.5 is -9), kept within a LONG |
+| `JsonScaled(n, places, def)` | a number | a fixed-point number (below) |
+| `JsonNumText(n)` | a number | its text exactly as written: "8.25", "1e-3" |
+| `JsonBool(n, def)` | true or false | 1 or 0 |
+
+`JsonInt` and `JsonScaled` also take **a string that is exactly a number**: some web services send
+`"temp": "8.5"`. Anything else gives `def`, the default you pass, so you can tell "missing" from 0:
+
+```c
+LONG port = JsonInt(JsonGet(cfg, "port"), 8080);     /* 8080 when it is not set */
+```
+
+## Numbers without floating point
+
+A plain 68000 has no FPU, so the library keeps numbers as their text and hands them out as whole
+numbers. For decimals, `JsonScaled(n, places, def)` gives the number times 10^places, rounded:
+
+| Number | `JsonScaled(n, 0, -)` | `(n, 1, -)` | `(n, 2, -)` |
+|---|---|---|---|
+| `8.25` | 8 | 83 | 825 |
+| `-0.5` | -1 | -5 | -50 |
+| `1e3` | 1000 | 10000 | 100000 |
+
+That is how money, temperatures and percentages are usually handled on small machines anyway:
+cents, tenths of a degree. Values too big for a LONG stop at its largest or smallest
+(2147483647 / -2147483648). `places` is 0 to 9.
+
+A program that does want floating point takes `JsonNumText(n)` and converts it with its own maths
+library (`atof`, `mathieeedoubbas.library`).
+
+## Text: UTF-8 and Latin-1
+
+JSON text is always UTF-8 (Unicode), and so is everything inside the library. Amiga programs
+mostly use Latin-1. The library converts at the edges:
+
+- **Reading:** `JsonLatin1(n, buf, size)` copies a string as Latin-1 into `buf`, ended with a 0.
+  Characters that Latin-1 does not have become the nearest it has: `Ł` as `L`, `€` as `E`,
+  curly quotes as `"`, dashes as `-`, anything else as `?`. It returns the full length, even if
+  `buf` was too small, so `JsonLatin1(n, NULL, 0)` asks how big a buffer you need.
+- **Building:** `JsonNewString(doc, text, len, JSF_LATIN1)` takes Amiga text. Without the flag the
+  text is taken as UTF-8; any byte that is not valid UTF-8 is still taken as Latin-1, so the
+  library never writes broken JSON.
+- **Writing:** `JWF_ASCII` writes every character beyond ASCII as `ö`: pure ASCII that any
+  program and any 7-bit channel accepts.
+
+## Building and writing
+
+```c
+JsonDoc *doc = JsonNewDoc();
+JsonNode *o = JsonNewObject(doc), *days = JsonNewArray(doc);
+
+JsonSetRoot(doc, o);
+JsonAdd(o, "city", JsonNewString(doc, "G\xf6teborg", -1, JSF_LATIN1));
+JsonAdd(o, "temp", JsonNewNumber(doc, "8.25"));
+JsonAdd(o, "sunny", JsonNewBool(doc, TRUE));
+JsonAdd(o, "days", days);
+JsonAdd(days, NULL, JsonNewInt(doc, 1));            /* arrays: no name */
+
+len = JsonWrite(o, buf, sizeof(buf), 0);            /* {"city":"Göteborg","temp":8.25,...} */
+JsonWriteFH(o, fh, JWF_PRETTY);                     /* to a file, two spaces an indent */
+JsonFree(doc);
+```
+
+- `JsonNew...` make a node in the document, not yet anywhere in the tree. `JsonAdd` puts it into
+  an object (with a name) or an array (name NULL). Adding a name that is already there replaces
+  the old member.
+- A failed `JsonNew...` returns NULL and `JsonAdd` refuses NULL, so the nested calls above need no
+  checks: if memory ran out, that member is just missing.
+- `JsonAdd` refuses a node that is already in the tree, one from another document, and a node
+  added into itself.
+- `JsonRemove(n)` takes a node out (it can be added again elsewhere); `JsonSetRoot` sets the top.
+- `JsonNewNumber(doc, "3.14")` takes the number's text and checks it is a JSON number;
+  `JsonNewInt(doc, n)` takes a LONG.
+- `JsonWrite` works like `snprintf`: it returns the full length, writes at most `size - 1` bytes
+  and a 0. `JsonWrite(n, NULL, 0, flags)` measures. `JsonWriteFH` writes to an open file and ends
+  with a newline; it returns FALSE if writing failed.
+- Any node can be written, not just the root: `JsonWrite(JsonGet(root, "days"), ...)`.
+
+## Settings files: relaxed reading
+
+People who write settings by hand leave comments and trailing commas, and old files are in Latin-1.
+`JPF_RELAXED` accepts all three:
+
+```c
+doc = JsonLoad("ENVARC:MyProgram.json", JPF_RELAXED, &err);
+```
+
+```
+// MyProgram settings
+{
+    "colours": ["black", "white",],    /* a comma at the end is fine */
+    "name": "Åsa"                      (in Latin-1: fine too)
+}
+```
+
+The flags one by one: `JPF_COMMENTS` (`//` and `/* */`), `JPF_TRAILING` (a comma before `]` or
+`}`), `JPF_LATIN1` (bytes that are not UTF-8 are Latin-1). Writing always produces strict JSON.
+
+## ARexx
+
+json.library is also an ARexx function library:
+
+```rexx
+/* the weather */
+CALL ADDLIB('json.library', 0, -30, 0)
+j = JSONLOAD('RAM:weather.json')
+IF j = '' THEN DO
+  SAY 'cannot read it:' JSONERROR()
+  EXIT 10
+END
+SAY JSONGET(j, 'city') 'has' JSONGET(j, 'temp') 'degrees'
+DO i = 0 TO JSONCOUNT(j, 'days') - 1
+  SAY 'day' i':' JSONGET(j, 'days['i'].temp')
+END
+CALL JSONFREE(j)
+```
+
+An ARexx script starts with a comment, and `ADDLIB` tells ARexx about the library once (it stays
+added until the next reboot; adding it again does no harm). Documents are **handles**, text like
+`JSON1`. Paths are the same as in C. Text going in and coming
+out is Latin-1; the JSON text of `JSONTEXT` and `JSONSAVE` is UTF-8 (or ASCII with the `ASCII`
+option).
+
+| Function | Does |
+|---|---|
+| `JSONPARSE(text, [options])` | reads JSON text: a handle, or `''` (then `JSONERROR()` says why). Options: `RELAXED` |
+| `JSONLOAD(file, [options])` | reads a file: a handle or `''`. Options: `RELAXED` |
+| `JSONNEW([ARRAY])` | a new, empty document (an object, or an array): a handle |
+| `JSONFREE(handle)` | frees it |
+| `JSONGET(handle, path, [default])` | a value as text: strings as they are, numbers as written, true/false as 1/0, null as `''`, objects and arrays as JSON. Missing: the default or `''` |
+| `JSONTYPE(handle, path)` | `OBJECT`, `ARRAY`, `STRING`, `NUMBER`, `BOOL`, `NULL`, or `''` if missing |
+| `JSONCOUNT(handle, path)` | how many members (0 if not an object or array) |
+| `JSONNAME(handle, path, n)` | the name of an object's n-th member, from 0 (`''` past the end) |
+| `JSONSET(handle, path, value, [type])` | sets a value, making the objects and arrays on the way; `[n]` one past the end adds to an array. Type: `STRING`, `NUMBER`, `BOOL` (1/0, TRUE/FALSE, YES/NO, ON/OFF), `NULL`, `OBJECT`, `ARRAY`, `JSON` (the value is JSON text). Without a type, a value that is a JSON number becomes a number, anything else text (`01234` stays text). 1, or 0 when it cannot be done (`JSONERROR()` says why) |
+| `JSONREMOVE(handle, path)` | removes a value: 1, or 0 if it was not there |
+| `JSONTEXT(handle, [path], [options])` | the document (or the value at path) as JSON text. Options: `PRETTY`, `ASCII` |
+| `JSONSAVE(handle, file, [options])` | writes the document to a file: 1 or 0. Options: `PRETTY`, `ASCII` |
+| `JSONERROR()` | why the last `JSONPARSE`, `JSONLOAD`, `JSONSET`, `JSONSAVE`, or a too-long `JSONGET`/`JSONTEXT` failed, like `3:7 expected : after a name` (line:column) |
+
+Building in ARexx:
+
+```rexx
+/* building */
+CALL ADDLIB('json.library', 0, -30, 0)
+k = JSONNEW()
+CALL JSONSET(k, 'city', 'Göteborg')
+CALL JSONSET(k, 'temp', 8.5)
+CALL JSONSET(k, 'days[0].temp', 7)
+CALL JSONSET(k, 'days[1].temp', 9)
+SAY JSONTEXT(k, '', 'ASCII')
+/* {"city":"G\u00f6teborg","temp":8.5,"days":[{"temp":7},{"temp":9}]} */
+CALL JSONSAVE(k, 'RAM:out.json', 'PRETTY')
+CALL JSONFREE(k)
+```
+
+- **Free your handles.** They are shared by all scripts (a handle can be passed to another
+  script) and live until `JSONFREE`, or until the library leaves memory.
+- **ARexx strings are at most 65535 bytes.** A bigger `JSONTEXT` or `JSONGET` gives `''` and
+  `JSONERROR()` says so; save big documents with `JSONSAVE`. Files of any size can be loaded.
+- A wrong handle or a missing argument is ARexx error 17 or 18, which stops the script; things
+  that can simply fail (bad JSON, a path that cannot be set, a file that cannot be opened) give
+  `''` or 0 and leave the reason in `JSONERROR()`.
+
+## Versions
+
+While json.library is young its version is **0** and its **revision** counts up (0.1, 0.2...).
+Open version 0 and check the revision before using newer calls:
+
+| Revision | Added |
+|---|---|
+| 0.1 | everything |
+
+From 1.0 on the version will count and `OpenLibrary(JSONNAME, n)` will do the check. Calls are
+never removed or moved, so a program built for an older revision keeps working with every newer one.
+
+## Rules and traps
+
+- **Free documents with `JsonFree`.** Not nodes, not strings: the document owns them.
+- **Never use a node after its document is freed**, and never mix nodes of two documents:
+  `JsonAdd` refuses them.
+- **Strings from the library are read-only** and UTF-8. Copy with `JsonLatin1` for Amiga text.
+- **`JsonString` stops at a 0 byte** inside a string (`\u0000` in the JSON); `JsonLength` tells
+  the real length.
+- **Big arrays:** walk them with `JsonFirst`/`JsonNext`; `JsonAt(a, i)` in a loop goes from the
+  start every time.
+- **Documents are not shared between tasks** without your own locking. Different documents in
+  different tasks are fine: the library keeps nothing per program.
+- **Duplicate names:** `JsonGet` gives the last one; `JsonFirst`/`JsonNext` see them all.

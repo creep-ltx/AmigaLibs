@@ -6,10 +6,12 @@ One folder per library, each with its own README, version and change log.
 | Library | What | Version |
 |---|---|---|
 | [tui/](tui/) | **tui.library**: the toolkit for programs that live inside the terminal (a CTerm tab or pane, or any console window): a screen grid that sends only what changed, 16/256/24-bit colour, UTF-8 with Latin-1 stand-ins, keys, mouse, pastes, resizing, pictures (sixel) | 0.3 |
+| [json/](json/) | **json.library**: read, build and write JSON from C and ARexx: strict or relaxed reading with clear errors, paths (`weather.days[0].temp`), Amiga text both ways, whole and fixed-point numbers without an FPU, compact or pretty writing | 0.1 |
 
 Every library comes with a **programmer's guide** (`docs/guide.md`: how to use it, a working first
 program, the traps) and a **reference** (`docs/reference.md`: every call in full, with its registers,
-laid out like Commodore's Autodocs). tui.library: [guide](tui/docs/guide.md), [reference](tui/docs/reference.md).
+laid out like Commodore's Autodocs). tui.library: [guide](tui/docs/guide.md), [reference](tui/docs/reference.md); json.library:
+[guide](json/docs/guide.md), [reference](json/docs/reference.md).
 
 Only libraries live here. Handlers, devices, datatypes and programs each have their own repository.
 
@@ -20,6 +22,7 @@ Its README says what comes out and which file to install.
 
 ## Used by
 
+- **json.library**: new; no program uses it yet.
 - **tui.library**: Sumi, Maki and Markdown (the TextTools repo), Ahiru (the CFile repo), and
   CUtils' `man`, `top` and `ctop`, which build its source into themselves. Those repos expect
   this one beside them (`../AmigaLibs`).

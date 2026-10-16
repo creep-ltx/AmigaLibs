@@ -1,0 +1,53 @@
+==id $Id: json.sfd 0.1 $
+* json.library: read, build and write JSON.
+* The order below is the library's jump table: never move a line,
+* only add new ones at the end (and raise the revision: 0.2, 0.3...).
+* The first entry (offset -30) is ARexx's: ARexx calls it with a RexxMsg
+* in A0 and takes an error code in D0 and a result string in A1, so it
+* is not a C call; it must stay first.
+==base _JsonBase
+==basetype struct Library *
+==libname json.library
+==bias 30
+==public
+==include <exec/types.h>
+==include <dos/dos.h>
+==include <libraries/json.h>
+* --- 0.1 ---
+==private
+LONG JsonRexx(APTR msg) (a0)
+==public
+JsonDoc * JsonParse(CONST_STRPTR text, LONG len, ULONG flags, struct JsonError * err) (a0,d0,d1,a1)
+JsonDoc * JsonLoad(CONST_STRPTR name, ULONG flags, struct JsonError * err) (a0,d0,a1)
+VOID JsonFree(JsonDoc * doc) (a0)
+JsonNode * JsonRoot(JsonDoc * doc) (a0)
+LONG JsonType(JsonNode * node) (a0)
+JsonNode * JsonGet(JsonNode * object, CONST_STRPTR name) (a0,a1)
+JsonNode * JsonAt(JsonNode * array, LONG index) (a0,d0)
+JsonNode * JsonFind(JsonNode * node, CONST_STRPTR path) (a0,a1)
+LONG JsonCount(JsonNode * node) (a0)
+JsonNode * JsonFirst(JsonNode * node) (a0)
+JsonNode * JsonNext(JsonNode * node) (a0)
+JsonNode * JsonParent(JsonNode * node) (a0)
+CONST_STRPTR JsonName(JsonNode * node) (a0)
+CONST_STRPTR JsonString(JsonNode * node) (a0)
+LONG JsonLength(JsonNode * node) (a0)
+CONST_STRPTR JsonNumText(JsonNode * node) (a0)
+LONG JsonInt(JsonNode * node, LONG def) (a0,d0)
+LONG JsonScaled(JsonNode * node, LONG places, LONG def) (a0,d0,d1)
+LONG JsonBool(JsonNode * node, LONG def) (a0,d0)
+LONG JsonLatin1(JsonNode * node, STRPTR buf, LONG size) (a0,a1,d0)
+JsonDoc * JsonNewDoc() ()
+VOID JsonSetRoot(JsonDoc * doc, JsonNode * node) (a0,a1)
+JsonNode * JsonNewObject(JsonDoc * doc) (a0)
+JsonNode * JsonNewArray(JsonDoc * doc) (a0)
+JsonNode * JsonNewString(JsonDoc * doc, CONST_STRPTR s, LONG len, ULONG flags) (a0,a1,d0,d1)
+JsonNode * JsonNewInt(JsonDoc * doc, LONG value) (a0,d0)
+JsonNode * JsonNewNumber(JsonDoc * doc, CONST_STRPTR text) (a0,a1)
+JsonNode * JsonNewBool(JsonDoc * doc, LONG value) (a0,d0)
+JsonNode * JsonNewNull(JsonDoc * doc) (a0)
+LONG JsonAdd(JsonNode * parent, CONST_STRPTR name, JsonNode * node) (a0,a1,a2)
+VOID JsonRemove(JsonNode * node) (a0)
+LONG JsonWrite(JsonNode * node, STRPTR buf, LONG size, ULONG flags) (a0,a1,d0,d1)
+LONG JsonWriteFH(JsonNode * node, BPTR fh, ULONG flags) (a0,d1,d0)
+==end
