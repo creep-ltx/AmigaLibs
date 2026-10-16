@@ -3,15 +3,14 @@
 Shared libraries for classic AmigaOS: the `.library` files that programs open from `LIBS:`.
 One folder per library, each with its own README, version and change log.
 
-| Library | What | Version |
-|---|---|---|
-| [tui/](tui/) | **tui.library**: the toolkit for programs that live inside the terminal (a CTerm tab or pane, or any console window): a screen grid that sends only what changed, 16/256/24-bit colour, UTF-8 with Latin-1 stand-ins, keys, mouse, pastes, resizing, pictures (sixel) | 0.3 |
-| [json/](json/) | **json.library**: read, build and write JSON from C and ARexx: strict or relaxed reading with clear errors, paths (`weather.days[0].temp`), Amiga text both ways, whole and fixed-point numbers without an FPU, compact or pretty writing | 0.1 |
+| Library | What it is |
+|---|---|
+| **[tui.library](tui/README.md)** 0.3 | The toolkit for programs inside the terminal (a CTerm tab, or any Shell window): fast screen updates, colours up to 24-bit, UTF-8, keys, mouse, resizing, pictures. |
+| **[json.library](json/README.md)** 0.1 | Read, build and write JSON from C and ARexx: clear errors, paths like `weather.days[0].temp`, Amiga text both ways, no FPU needed. |
 
 Every library comes with a **programmer's guide** (`docs/guide.md`: how to use it, a working first
 program, the traps) and a **reference** (`docs/reference.md`: every call in full, with its registers,
-laid out like Commodore's Autodocs). tui.library: [guide](tui/docs/guide.md), [reference](tui/docs/reference.md); json.library:
-[guide](json/docs/guide.md), [reference](json/docs/reference.md).
+laid out like Commodore's Autodocs). Each library's README links to them.
 
 Only libraries live here. Handlers, devices, datatypes and programs each have their own repository.
 
