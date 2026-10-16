@@ -280,6 +280,7 @@ Open version 0 and check the revision before using newer calls:
 | 0.1 | everything not listed below |
 | 0.2 | `TuiPutUTF8`, `TC_RGB` |
 | 0.3 | `TuiSignal`, `TuiPoll`, `TuiKeyWaiting`, `TC_PEN` |
+| 0.4 | `TuiOpenIO` |
 
 ```c
 TuiBase = OpenLibrary(TUINAME, 0);
@@ -314,6 +315,10 @@ working over the library, and `build/libtuiglue.a` opens the library the first t
 - **Input from a pipe.** A program reading data from a pipe (`type file | maki`) has a pipe as
   `Input()`, not the console. Open the console itself (`Open("*", MODE_OLDFILE)`) and pass that
   handle: `TuiOpen(console)`.
+- **Output captured** (0.4). A program in backquotes (``Echo `fzf` ``) or with `>file` has no console
+  as `Output()`, and inside backquotes `Input()` is `NIL:`. Open the console as `"*"` and give it
+  for whichever is not interactive: `TuiOpenIO(in, out)`, 0 meaning `Input()` / `Output()`. Print
+  the program's result to `Output()` after `TuiClose`. FuzzyFind's `fzf` does exactly this.
 - **Always handle `TE_END`.** When a CTerm tab closes, the console is gone; a program that ignores
   `TE_END` and waits again gets `TE_END` again at once and spins.
 - **Always call `TuiClose`**, also on errors, or the Shell is left in raw mode with no cursor.

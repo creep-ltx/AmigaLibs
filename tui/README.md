@@ -24,6 +24,7 @@ UTF-8.
 | **Pastes** | bracketed, handed over in one piece |
 | **Size** | asked at start, followed on resize; the cell size in pixels (CTerm) |
 | **Own screen** | the Shell's history stays clean; suspend/resume for running a command |
+| **Output captured** | draws on the console even when the program's output goes elsewhere (`Echo \`fzf\``): `TuiOpenIO` (0.4) |
 | **Pictures** | `TuiRaw` + `TuiDirty` for sixel and friends (Markdown) |
 | **Waiting** | one `Wait()` for keys, Ctrl-C..F and the program's own signals; never blocks quitting. A program with a `Wait()` of its own adds `TuiSignal()` and takes events with `TuiPoll()` (0.3) |
 | **The terminal gone** | `TE_END` when a CTerm tab closes, so nothing spins |
@@ -111,6 +112,8 @@ for them. A real 68060 was not measured (FS-UAE has none set up). After adding a
 | `tests/tuitest.c` | draws everything, logs events: `tuitest` or `tuitest SECS` |
 
 ## State
+
+**0.4b1, 2026-10-17:** `TuiOpenIO(in, out)`, for FuzzyFind's `fzf` in backquotes (offset 174, at the end). Tested in FS-UAE (3.2.1 and 2.05) through fzf; Sumi, Maki, Markdown, Ahiru and CUtils rebuilt. Not yet on the A1200 (it runs 0.3b1).
 
 **On the A1200 since 2026-10-16 (the user's go):** `LIBS:tui.library` 0.3b1 (the 020 build, Emu68),
 with C:Maki 0.1b4, C:Markdown 0.1b3, C:Sumi 0.2b4 and Work:Utils/Ahiru/Ahiru 0.3b5; the old

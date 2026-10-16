@@ -4,7 +4,7 @@ Every call, in the order of the alphabet. The number after each name is the revi
 (see [Versions](guide.md#versions)); the registers are for assembler and other languages.
 How to use them together: the [programmer's guide](guide.md).
 
-[TuiBeep](#tuibeep) · [TuiBox](#tuibox) · [TuiClear](#tuiclear) · [TuiClose](#tuiclose) · [TuiCursor](#tuicursor) · [TuiDirty](#tuidirty) · [TuiFill](#tuifill) · [TuiFlush](#tuiflush) · [TuiKeyAfter](#tuikeyafter) · [TuiKeyWaiting](#tuikeywaiting) · [TuiOpen](#tuiopen) · [TuiPoll](#tuipoll) · [TuiPossible](#tuipossible) · [TuiPut](#tuiput) · [TuiPutC](#tuiputc) · [TuiPutUTF8](#tuipututf8) · [TuiRaw](#tuiraw) · [TuiRedraw](#tuiredraw) · [TuiResized](#tuiresized) · [TuiResume](#tuiresume) · [TuiSignal](#tuisignal) · [TuiSuspend](#tuisuspend) · [TuiTitle](#tuititle) · [TuiWait](#tuiwait)
+[TuiBeep](#tuibeep) · [TuiBox](#tuibox) · [TuiClear](#tuiclear) · [TuiClose](#tuiclose) · [TuiCursor](#tuicursor) · [TuiDirty](#tuidirty) · [TuiFill](#tuifill) · [TuiFlush](#tuiflush) · [TuiKeyAfter](#tuikeyafter) · [TuiKeyWaiting](#tuikeywaiting) · [TuiOpen](#tuiopen) · [TuiOpenIO](#tuiopenio) · [TuiPoll](#tuipoll) · [TuiPossible](#tuipossible) · [TuiPut](#tuiput) · [TuiPutC](#tuiputc) · [TuiPutUTF8](#tuipututf8) · [TuiRaw](#tuiraw) · [TuiRedraw](#tuiredraw) · [TuiResized](#tuiresized) · [TuiResume](#tuiresume) · [TuiSignal](#tuisignal) · [TuiSuspend](#tuisuspend) · [TuiTitle](#tuititle) · [TuiWait](#tuiwait)
 
 ## TuiBeep
 
@@ -288,6 +288,36 @@ t - the terminal, for every other call; NULL if in or Output() is
 **Notes:** t belongs to the calling task: use it only from there.
 
 **See also:** [TuiPossible()](#tuipossible), [TuiClose()](#tuiclose)
+
+## TuiOpenIO
+
+Take over the terminal, keys and screen on given handles (0.4).
+
+```c
+t = TuiOpenIO(in, out)
+D0            D1  D2
+
+struct Tui *TuiOpenIO(BPTR, BPTR);
+```
+
+As TuiOpen(), but the screen is drawn on out instead of Output(). For a program whose output is captured (in backquotes, or redirected to a file) that still draws in the console: open the console as "*" and pass it for in and/or out.
+
+**Inputs**
+
+```
+in  - the console to read keys from; 0 for Input()
+out - the console to draw on; 0 for Output()
+```
+
+**Result**
+
+```
+t - the terminal, or NULL if in or out is not an interactive console
+```
+
+**Notes:** Check lib_Revision >= 4 before calling it. TuiOpen(in) is TuiOpenIO(in, 0).
+
+**See also:** [TuiOpen](#tuiopen), [TuiClose](#tuiclose)
 
 ## TuiPoll
 
