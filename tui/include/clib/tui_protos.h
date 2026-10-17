@@ -57,6 +57,9 @@ LONG TuiKeyWaiting(struct Tui * t);
 /* --- 0.4 --- */
 struct Tui * TuiOpenIO(BPTR in, BPTR out);
 
+/* --- 0.5 --- */
+LONG TuiCharWidth(ULONG c);
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

@@ -59,5 +59,8 @@ int tui_noterm(TuiEv *e);
 #define tui_box(w)        (tui_h ? TuiBox(tui_h, w) : tui_nobox(w))
 #define tui_dirty(c, r, w, h) TUI_DO(TuiDirty(tui_h, c, r, w, h))
 #define tui_raw(c, r, s, n)   TUI_DO(TuiRaw(tui_h, c, r, (CONST_STRPTR)(s), n))
+/* the cells a character takes in the grid (0.5: wide ones two, marks
+ * none, controls -1); with an older tui.library 1 for every printable one */
+LONG tui_charwidth(ULONG c);
 
 #endif

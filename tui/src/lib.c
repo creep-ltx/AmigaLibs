@@ -79,6 +79,8 @@ static ULONG L_Signal(REG(a0, struct Tui *t)) { return TuiSignal(t); }
 static LONG L_Poll(REG(a0, struct Tui *t), REG(a1, TuiEv *e)) { return TuiPoll(t, e); }
 static LONG L_KeyWaiting(REG(a0, struct Tui *t)) { return TuiKeyWaiting(t); }
 static struct Tui *L_OpenIO(REG(d1, BPTR in), REG(d2, BPTR out)) { return TuiOpenIO(in, out); }
+static LONG L_CharWidth(REG(d0, ULONG c)) { return TuiCharWidth(c); }
+void tui_closeutf8(void);           /* core.c */
 
 /* in tui.sfd's order, after exec's four: never reorder, only add */
 static const APTR functable[] = {
@@ -95,6 +97,8 @@ static const APTR functable[] = {
     (APTR)L_Signal, (APTR)L_Poll, (APTR)L_KeyWaiting,
     /* 0.4 */
     (APTR)L_OpenIO,
+    /* 0.5 */
+    (APTR)L_CharWidth,
     (APTR)-1
 };
 
@@ -145,6 +149,7 @@ static BPTR libexpunge(REG(a6, struct TuiBase *b))
     }
     seg = b->seglist;
     Remove(&b->lib.lib_Node);
+    tui_closeutf8();
     CloseLibrary((struct Library *)IntuitionBase);
     CloseLibrary((struct Library *)DOSBase);
     FreeMem((UBYTE *)b - b->lib.lib_NegSize, b->lib.lib_NegSize + b->lib.lib_PosSize);

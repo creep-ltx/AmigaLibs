@@ -18,7 +18,7 @@ UTF-8.
 | **Colours** | the ANSI 16, xterm's 256 (`TC_X(n)`), any 24-bit colour (`TC_RGB(r, g, b)`), the terminal's own; the nearest Workbench pens in a plain console, or a pen exactly (`TC_PEN(n)`, 0.3) |
 | **Attributes** | bold, underline, reverse, italic; dim and strike in CTerm |
 | **Text** | `TuiPut` for Latin-1, `TuiPutUTF8` for UTF-8 (a stray Latin-1 byte still shows; returns the width), `TuiPutC` one character |
-| **Characters** | UTF-8 in CTerm. A plain console (Latin-1 only) gets the nearest it has: box lines as `- \| +`, a full block as a reversed space, shades as `: #`, `Łódź` as `Lódz`, quotes and dashes as `' " -`, arrows as `< > ^ v`, `€` as `E`. Wide (CJK, emoji) and combining characters are `?` everywhere. |
+| **Characters** | UTF-8 in CTerm. A plain console (Latin-1 only) gets the nearest it has: box lines as `- \| +`, a full block as a reversed space, shades as `: #`, `Łódź` as `Lódz`, quotes and dashes as `' " -`, arrows as `< > ^ v`, `€` as `E`. Wide characters (CJK, emoji) take two cells, accents written apart are put on their letter, widths from utf8.library (`TuiCharWidth`, 0.5). |
 | **Keys** | the Amiga console's codes and xterm's, with Shift/Alt/Ctrl; F1-F12, Help |
 | **Mouse** | press, release, drag, wheel, with modifiers (CTerm) |
 | **Pastes** | bracketed, handed over in one piece |
@@ -112,6 +112,16 @@ for them. A real 68060 was not measured (FS-UAE has none set up). After adding a
 | `tests/tuitest.c` | draws everything, logs events: `tuitest` or `tuitest SECS` |
 
 ## State
+
+**0.5b1, 2026-10-17:** wide characters (Chinese, Japanese, Korean, emoji) take two cells, and
+`TuiPutUTF8` puts accents written as separate marks on their letter. The widths come from
+utf8.library when it is in `LIBS:` (opened on first need), else a table of its own that is the same
+as CTerm's, so they agree either way; `TuiCharWidth(c)` (offset 180) gives them to programs, and the
+glue's `tui_charwidth()` answers 1 with an older library. A program that puts one character per
+cell keeps showing what it did (the half of a wide character it overwrites makes the other half
+`?`). Tested with `tests/widetest` in FS-UAE (3.2.1, 020 build) in CTerm 0.3b53 and in a plain
+Shell window: the same columns in both. The static build (CUtils' man, top, ctop) builds and uses
+the table. Not yet on the A1200; Sumi, Maki, Markdown, Ahiru and fzf do not use the widths yet.
 
 **0.4b1, 2026-10-17:** `TuiOpenIO(in, out)`, for FuzzyFind's `fzf` in backquotes (offset 174, at the end). A title set with `TuiTitle` is taken away on `TuiClose` and `TuiSuspend` and put back on `TuiResume` (CTerm went on showing "fzf" after fzf ended; Ahiru, man, top and ctop had the same); seen in CTerm with fzf, suspend/resume not tried. Tested in FS-UAE (3.2.1 and 2.05) through fzf; Sumi, Maki, Markdown, Ahiru and CUtils rebuilt. Not yet on the A1200 (it runs 0.3b1).
 

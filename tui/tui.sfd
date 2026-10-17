@@ -39,4 +39,6 @@ LONG TuiPoll(struct Tui * t, TuiEv * e) (a0,a1)
 LONG TuiKeyWaiting(struct Tui * t) (a0)
 * --- 0.4 ---
 struct Tui * TuiOpenIO(BPTR in, BPTR out) (d1,d2)
+* --- 0.5 ---
+LONG TuiCharWidth(ULONG c) (d0)
 ==end

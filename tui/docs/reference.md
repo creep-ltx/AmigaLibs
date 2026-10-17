@@ -4,7 +4,7 @@ Every call, in the order of the alphabet. The number after each name is the revi
 (see [Versions](guide.md#versions)); the registers are for assembler and other languages.
 How to use them together: the [programmer's guide](guide.md).
 
-[TuiBeep](#tuibeep) · [TuiBox](#tuibox) · [TuiClear](#tuiclear) · [TuiClose](#tuiclose) · [TuiCursor](#tuicursor) · [TuiDirty](#tuidirty) · [TuiFill](#tuifill) · [TuiFlush](#tuiflush) · [TuiKeyAfter](#tuikeyafter) · [TuiKeyWaiting](#tuikeywaiting) · [TuiOpen](#tuiopen) · [TuiOpenIO](#tuiopenio) · [TuiPoll](#tuipoll) · [TuiPossible](#tuipossible) · [TuiPut](#tuiput) · [TuiPutC](#tuiputc) · [TuiPutUTF8](#tuipututf8) · [TuiRaw](#tuiraw) · [TuiRedraw](#tuiredraw) · [TuiResized](#tuiresized) · [TuiResume](#tuiresume) · [TuiSignal](#tuisignal) · [TuiSuspend](#tuisuspend) · [TuiTitle](#tuititle) · [TuiWait](#tuiwait)
+[TuiBeep](#tuibeep) · [TuiBox](#tuibox) · [TuiCharWidth](#tuicharwidth) · [TuiClear](#tuiclear) · [TuiClose](#tuiclose) · [TuiCursor](#tuicursor) · [TuiDirty](#tuidirty) · [TuiFill](#tuifill) · [TuiFlush](#tuiflush) · [TuiKeyAfter](#tuikeyafter) · [TuiKeyWaiting](#tuikeywaiting) · [TuiOpen](#tuiopen) · [TuiOpenIO](#tuiopenio) · [TuiPoll](#tuipoll) · [TuiPossible](#tuipossible) · [TuiPut](#tuiput) · [TuiPutC](#tuiputc) · [TuiPutUTF8](#tuipututf8) · [TuiRaw](#tuiraw) · [TuiRedraw](#tuiredraw) · [TuiResized](#tuiresized) · [TuiResume](#tuiresume) · [TuiSignal](#tuisignal) · [TuiSuspend](#tuisuspend) · [TuiTitle](#tuititle) · [TuiWait](#tuiwait)
 
 ## TuiBeep
 
@@ -57,6 +57,36 @@ c - the character; '?' for an unknown which
 ```c
 TuiFill(t, 1, 0, w - 2, TuiBox(t, BX_H), 7, TC_DEFAULT, 0);
 ```
+
+## TuiCharWidth
+
+How many cells a character takes (0.5).
+
+```c
+cells = TuiCharWidth(c)
+D0                   D0
+
+LONG TuiCharWidth(ULONG);
+```
+
+Says how many cells of the grid a character takes, the same answer TuiPutC() and TuiPutUTF8() use: lay text out with it and wide characters line up.
+
+**Inputs**
+
+```
+c - a Unicode character (Latin-1 is the same below 256)
+```
+
+**Result**
+
+```
+cells - 2: wide (Chinese, Japanese, Korean, most emoji)
+        1: the rest
+        0: a mark that joins the character before (an accent)
+       -1: a control (0-31, 127-159) or not a character
+```
+
+**Notes:** The widths are utf8.library's (Unicode 16) when it is in LIBS:, else the library's own table, the same as CTerm's. Check lib_Revision >= 5 before calling it; the tui_charwidth() glue name does that and answers 1 for an older library.
 
 ## TuiClear
 
@@ -413,7 +443,7 @@ TuiPutC(t, col, row, c, fg, bg, attr)
 VOID TuiPutC(struct Tui *, LONG, LONG, ULONG, LONG, LONG, LONG);
 ```
 
-Puts one character in one cell.
+Puts one character in one cell, or a wide one in two (0.5).
 
 **Inputs**
 
@@ -422,8 +452,10 @@ t        - from TuiOpen()
 col, row - the cell; outside the grid nothing happens
 c        - Latin-1 (0-255) or Unicode (up to 0x10FFFF). A plain
            console gets the nearest it has (box lines as - | +,
-           accented letters without the accent, ...). Wide and
-           combining characters show as '?' everywhere.
+           accented letters without the accent, ...). A wide
+           character (TuiCharWidth() 2) takes this cell and the next:
+           in a plain console '?' and a space; in the last column '?'.
+           A combining mark alone shows as '?'.
 fg, bg   - colours, see TuiFill()
 attr     - attributes, see TuiFill()
 ```
@@ -440,7 +472,7 @@ LONG TuiPutUTF8(struct Tui *, LONG, LONG, CONST_STRPTR, LONG, LONG,
                 LONG, LONG);
 ```
 
-Puts UTF-8 text from col along row, one cell a character. A byte that is not valid UTF-8 is taken as Latin-1, so Latin-1 text still shows right.
+Puts UTF-8 text from col along row: one cell a character, two for a wide one (0.5), and accents written as separate marks put on their letter (with utf8.library; without it they are left out). A byte that is not valid UTF-8 is taken as Latin-1, so Latin-1 text still shows right.
 
 **Inputs**
 

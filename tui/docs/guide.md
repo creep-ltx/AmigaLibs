@@ -159,10 +159,35 @@ is its Unicode number. What reaches the screen depends on the terminal:
   `- | +`, a full block as a reversed space, shades as `:` and `#`, accented letters beyond
   Latin-1 without the accent (`Łódź` as `Lódz`), curly quotes and dashes as `' " -`, arrows as
   `< > ^ v`, `€` as `E`, anything else as `?`.
-- **Wide characters** (Chinese, Japanese, emoji) and **combining marks** show as `?` everywhere:
-  they take two cells or none and would move the rest of the line.
+- **Wide characters** (Chinese, Japanese, Korean, most emoji) take **two cells** (0.5): `TuiPutC`
+  and `TuiPutUTF8` fill the cell and the one after it, and the next character goes two cells on.
+  In a plain console they show as `?` and a space, so the columns are the same everywhere.
+- **Accents written as separate marks** (an e followed by a combining acute, as Macs write file
+  names) are put on their letter by `TuiPutUTF8`: é in one cell. A mark on its own in `TuiPutC`
+  shows as `?`.
 
 So a program can always write the nicest character and leave the plain console to the library.
+
+**Widths.** `TuiCharWidth(c)` (0.5) says how many cells a character takes in the grid: 2 for wide
+ones, 0 for marks, 1 for the rest, -1 for controls. Lay text out with it, not one cell per
+character, and wide characters line up:
+
+```c
+for (i = 0, x = 0; i < n; i++) {
+    TuiPutC(t, x, row, chars[i], 7, TC_DEFAULT, 0);
+    x += TuiCharWidth(chars[i]);
+}
+```
+
+`TuiPutUTF8` returns the cells its text took, so text after it can follow at `col + cells`. The
+widths come from **utf8.library** (Unicode 16, `../utf8`) when it is in `LIBS:`, opened the first
+time one is needed; without it the library has a table of its own, the same as CTerm's, and a
+program built with the toolkit inside (`TUI_STATIC`) always uses that table. CTerm (0.3b53 and up)
+asks utf8.library too, so the program and the terminal agree on every character.
+
+**Programs that do not know widths** (that put one character per cell) keep working: when a
+character is put over the right half of a wide one, the left half shows `?`, which is what they
+always showed.
 
 ## Events
 
@@ -281,6 +306,7 @@ Open version 0 and check the revision before using newer calls:
 | 0.2 | `TuiPutUTF8`, `TC_RGB` |
 | 0.3 | `TuiSignal`, `TuiPoll`, `TuiKeyWaiting`, `TC_PEN` |
 | 0.4 | `TuiOpenIO` |
+| 0.5 | `TuiCharWidth`; wide characters in two cells, accents put on their letters |
 
 ```c
 TuiBase = OpenLibrary(TUINAME, 0);

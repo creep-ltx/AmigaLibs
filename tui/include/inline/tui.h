@@ -120,4 +120,8 @@ typedef ULONG _sfdc_vararg;
       LP2(0xae, struct Tui *, TuiOpenIO , BPTR, ___in, d1, BPTR, ___out, d2,\
       , TUI_BASE_NAME)
 
+#define TuiCharWidth(___c) \
+      LP1(0xb4, LONG, TuiCharWidth , ULONG, ___c, d0,\
+      , TUI_BASE_NAME)
+
 #endif /* !_INLINE_TUI_H */

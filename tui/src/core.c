@@ -5,7 +5,9 @@
  * strike, TuiDirty and TuiRaw merged in (2026-10-16). 0.2: 24-bit
  * colour, TuiPutUTF8, and the nearest character for a Latin-1 console.
  * 0.3: TuiSignal, TuiPoll and TuiKeyWaiting for a program with a Wait()
- * of its own (Ahiru), TC_PEN for a console's own pens.
+ * of its own (Ahiru), TC_PEN for a console's own pens. 0.5: wide
+ * characters (CJK, emoji) in two cells, accents put on their letters in
+ * TuiPutUTF8, the widths from utf8.library when it is there (TuiCharWidth).
  *
  * Everything a program's terminal needs lives in its own struct (Priv,
  * from TuiOpen): the library is shared, so nothing may be global.
@@ -40,6 +42,9 @@ unsigned long strlen(const char *);
 #endif
 #include <libraries/tui.h>
 #include <clib/tui_protos.h>
+#ifdef TUI_LIB
+#include <proto/utf8.h>
+#endif
 
 #define ID_CTRM  0x4354524DUL   /* CTerm's console answers this to DISK_INFO */
 #define WAITUS   250000         /* the longest a key wait packet stays out */
@@ -57,6 +62,10 @@ typedef struct {
 /* cellable()'s answer: show it reversed (a full block in a plain console
  * is a reversed space) */
 #define FB_REV 0x80000000UL
+
+/* the right half of a wide character: the cell before holds it. Not a
+ * code point, and without FB_REV's bit (fill1 would take it for one) */
+#define TAIL   0x00FFFFFEUL
 
 typedef struct {
     struct Tui pub;              /* what the program reads: first */
@@ -180,6 +189,72 @@ void TuiRedraw(struct Tui *t)
     if (!p->tsusp) outs(p, "\x1b[0m\x1b[H\x1b[J");
 }
 
+/* ---- widths ------------------------------------------------------------- */
+
+#ifdef TUI_LIB
+/* utf8.library, opened on first need by whichever program needs it (a
+ * process: OpenLibrary may load it from disk); NULL if it is not there.
+ * Shared by every opener; lib.c closes it at expunge. */
+struct Library *Utf8Base;
+static int u8tried;
+
+static struct Library *u8lib(void)
+{
+    if (!u8tried) {
+        struct Library *b = OpenLibrary("utf8.library", 0);
+        Forbid();
+        if (!Utf8Base && b) {
+            Utf8Base = b;
+            b = NULL;
+        }
+        u8tried = 1;
+        Permit();
+        if (b) CloseLibrary(b);         /* another task was quicker */
+    }
+    return Utf8Base;
+}
+
+void tui_closeutf8(void)
+{
+    if (Utf8Base) CloseLibrary(Utf8Base);
+    Utf8Base = NULL;
+    u8tried = 0;
+}
+#endif
+
+/* how many cells c takes without utf8.library: CTerm's own table (vt.c
+ * cp_width), so the two agree on every character */
+static int roughwidth(ULONG c)
+{
+    if (c < 0x300 || (c >= 0x2100 && c < 0x2E80))
+        return 1;
+    if ((c >= 0x300 && c <= 0x36F) || (c >= 0x200B && c <= 0x200F) ||
+        (c >= 0x20D0 && c <= 0x20FF) || (c >= 0xFE00 && c <= 0xFE0F) ||
+        (c >= 0x1AB0 && c <= 0x1AFF) || (c >= 0x1DC0 && c <= 0x1DFF))
+        return 0;
+    if ((c >= 0x1100 && c <= 0x115F) || (c >= 0x2E80 && c <= 0x303E) ||
+        (c >= 0x3041 && c <= 0x33FF) || (c >= 0x3400 && c <= 0x4DBF) ||
+        (c >= 0x4E00 && c <= 0x9FFF) || (c >= 0xA000 && c <= 0xA4CF) ||
+        (c >= 0xAC00 && c <= 0xD7A3) || (c >= 0xF900 && c <= 0xFAFF) ||
+        (c >= 0xFE30 && c <= 0xFE4F) || (c >= 0xFF00 && c <= 0xFF60) ||
+        (c >= 0xFFE0 && c <= 0xFFE6) || (c >= 0x1F300 && c <= 0x1F64F) ||
+        (c >= 0x1F900 && c <= 0x1F9FF) || (c >= 0x20000 && c <= 0x3FFFD))
+        return 2;
+    return 1;
+}
+
+/* the cells c takes: -1 a control, 0 joins the one before, 1, 2 */
+LONG TuiCharWidth(ULONG c)
+{
+    if (c < 32 || (c >= 0x7F && c < 0xA0)) return -1;
+    if (c < 0x300) return 1;
+    if (c > 0x10FFFF || (c >= 0xD800 && c < 0xE000)) return -1;
+#ifdef TUI_LIB
+    if (u8lib()) return Utf8CharWidth(c);
+#endif
+    return roughwidth(c);
+}
+
 /* Latin Extended-A (U+0100-017F) without its accents: Czech, Polish,
  * Turkish... names still read in a Latin-1 console */
 static const char latinA[] =
@@ -253,28 +328,32 @@ static ULONG fallback(ULONG c)
     return '?';
 }
 
-/* a code point a cell can show: wide (CJK, emoji) and combining marks
- * would move everything after them, controls would steer the terminal;
- * beyond Latin-1 without UTF-8: the nearest (fallback). FB_REV may be
- * or'ed in. */
+/* a code point one cell can show: controls would steer the terminal,
+ * and a mark or wide character has no cell of its own here (putcell
+ * gives a wide one two); beyond Latin-1 without UTF-8: the nearest
+ * (fallback). FB_REV may be or'ed in. */
 static ULONG cellable(Priv *p, ULONG c)
 {
     if (c < 32 || (c >= 0x7F && c < 0xA0)) return '?';
-    if ((c >= 0x300 && c < 0x370) || (c >= 0x1100 && c < 0x1160) ||
-        (c >= 0x2E80 && c < 0xA4D0) || (c >= 0xAC00 && c < 0xD7A4) ||
-        (c >= 0xF900 && c < 0xFB00) || (c >= 0xFE00 && c < 0xFE50) ||
-        (c >= 0xFF00 && c < 0xFF61) || (c >= 0xFFE0 && c < 0xFFE7) ||
-        (c >= 0xD800 && c < 0xE000) || c >= 0x1F000 || c == 0x200B ||
-        c == 0x200D || c == 0xFEFF)
+    if (c >= 0x300 && TuiCharWidth(c) != 1)
         return c == 0x3000 && !p->pub.UTF8 ? ' ' : '?';
     if (!p->pub.UTF8 && c > 0xFF) return fallback(c);
     return c;
 }
 
-/* one cell (col and row on the grid) */
-static void setcell(Priv *p, Cell *q, ULONG c, LONG fg, LONG bg, LONG attr)
+/* cells col..col+n-1 of row r are about to be written: a wide character
+ * cut in half there loses its other half - its left half shows '?' (what
+ * a program that does not know widths always saw), its right half a
+ * space */
+static void unwide(Priv *p, Cell *r, int col, int n)
 {
-    c = cellable(p, c);
+    if (col > 0 && col < p->gw && r[col].c == TAIL) r[col - 1].c = '?';
+    col += n;
+    if (col > 0 && col < p->gw && r[col].c == TAIL) r[col].c = ' ';
+}
+
+static void fill1(Cell *q, ULONG c, LONG fg, LONG bg, LONG attr)
+{
     if (c & FB_REV) {
         c &= ~FB_REV;
         attr ^= TA_REV;
@@ -285,40 +364,98 @@ static void setcell(Priv *p, Cell *q, ULONG c, LONG fg, LONG bg, LONG attr)
     q->at = (UBYTE)attr;
 }
 
+/* c at col (on the grid): the cells it took, 1 or 2 (a wide character:
+ * its right half is TAIL; on a Latin-1 console '?' and a space) */
+static int putcell(Priv *p, int col, int row, ULONG c, LONG fg, LONG bg, LONG attr)
+{
+    Cell *r = p->want + row * p->gw;
+    if (c >= 0x1100 && TuiCharWidth(c) == 2) {
+        if (col + 1 >= p->gw) {             /* half of it would not show */
+            unwide(p, r, col, 1);
+            fill1(r + col, c == 0x3000 ? ' ' : '?', fg, bg, attr);
+            return 2;
+        }
+        unwide(p, r, col, 2);
+        if (!p->pub.UTF8) {
+            fill1(r + col, c == 0x3000 ? ' ' : '?', fg, bg, attr);
+            fill1(r + col + 1, ' ', fg, bg, attr);
+        } else {
+            fill1(r + col, c, fg, bg, attr);
+            fill1(r + col + 1, TAIL, fg, bg, attr);
+        }
+        return 2;
+    }
+    unwide(p, r, col, 1);
+    fill1(r + col, cellable(p, c), fg, bg, attr);
+    return 1;
+}
+
 void TuiPutC(struct Tui *t, LONG col, LONG row, ULONG c, LONG fg, LONG bg, LONG attr)
 {
     Priv *p = P(t);
     if (!p || col < 0 || row < 0 || col >= p->gw || row >= p->gh) return;
-    setcell(p, &p->want[row * p->gw + col], c, fg, bg, attr);
+    putcell(p, col, row, c, fg, bg, attr);
 }
 
-/* s as UTF-8 (len < 0: up to its 0), one cell a character; a byte that
- * is not good UTF-8 counts as Latin-1, so Latin-1 text still shows.
- * Returns how many cells the text takes (also what fell off the edges) */
+/* the character at *pp (e: the end), and *pp past it; a byte that is
+ * not good UTF-8 is Latin-1 */
+static ULONG dec1(const UBYTE **pp, const UBYTE *e)
+{
+    const UBYTE *b = *pp;
+    ULONG c = *b++;
+    if (c >= 0xC2 && c <= 0xF4) {
+        int k = c < 0xE0 ? 1 : c < 0xF0 ? 2 : 3, i;
+        ULONG u = c & (0x3F >> k);
+        for (i = 0; i < k && b + i < e && (b[i] & 0xC0) == 0x80; i++)
+            u = (u << 6) | (b[i] & 0x3F);
+        /* whole, and not too long a way to write a smaller one */
+        if (i == k && u >= (k == 1 ? 0x80UL : k == 2 ? 0x800UL : 0x10000UL) && u < 0x110000) {
+            c = u;
+            b += k;
+        }
+    }
+    *pp = b;
+    return c;
+}
+
+/* s as UTF-8 (len < 0: up to its 0); a byte that is not good UTF-8
+ * counts as Latin-1, so Latin-1 text still shows. A wide character
+ * takes two cells; accents after a letter are put on it (with
+ * utf8.library: e + acute shows as é) or left out. Returns how many
+ * cells the text takes (also what fell off the edges) */
 LONG TuiPutUTF8(struct Tui *t, LONG col, LONG row, CONST_STRPTR s, LONG len, LONG fg, LONG bg, LONG attr)
 {
     Priv *p = P(t);
-    const UBYTE *b = (const UBYTE *)s, *e;
+    const UBYTE *b = (const UBYTE *)s, *e, *start, *nx, *q;
     LONG n = 0;
+    ULONG c;
     if (!s) return 0;
     if (len < 0) len = strlen((const char *)s);
     e = b + len;
     while (b < e) {
-        ULONG c = *b++;
-        if (c >= 0xC2 && c <= 0xF4) {
-            int k = c < 0xE0 ? 1 : c < 0xF0 ? 2 : 3, i;
-            ULONG u = c & (0x3F >> k);
-            for (i = 0; i < k && b + i < e && (b[i] & 0xC0) == 0x80; i++)
-                u = (u << 6) | (b[i] & 0x3F);
-            /* whole, and not too long a way to write a smaller one */
-            if (i == k && u >= (k == 1 ? 0x80UL : k == 2 ? 0x800UL : 0x10000UL) && u < 0x110000) {
-                c = u;
-                b += k;
-            }
+        start = b;
+        c = dec1(&b, e);
+        /* the marks that join it (all U+0300 and up: 0xCC and up) */
+        for (nx = b; nx < e && *nx >= 0xCC; nx = q) {
+            q = nx;
+            if (TuiCharWidth(dec1(&q, e)) != 0) break;
         }
+        if (nx > b) {
+#ifdef TUI_LIB
+            UBYTE one[24];
+            if (nx - start < 20 && u8lib() && c >= 0x20) {
+                const UBYTE *o = one;
+                Utf8Normalize((CONST_STRPTR)start, nx - start, (STRPTR)one, sizeof(one), U8F_COMPOSE);
+                c = dec1(&o, one + strlen((const char *)one));
+            }
+#endif
+            b = nx;
+        }
+        (void)start;                        /* (only the library composes) */
         if (p && row >= 0 && row < p->gh && col + n >= 0 && col + n < p->gw)
-            setcell(p, &p->want[row * p->gw + col + n], c, fg, bg, attr);
-        n++;
+            n += putcell(p, col + n, row, c, fg, bg, attr);
+        else
+            n += c >= 0x1100 && TuiCharWidth(c) == 2 ? 2 : 1;
     }
     return n;
 }
@@ -335,6 +472,8 @@ void TuiPut(struct Tui *t, LONG col, LONG row, CONST_STRPTR s, LONG len, LONG fg
     if (!p || row < 0 || row >= p->gh) return;
     if (col < 0) { s -= col; len += col; col = 0; }
     if (len > p->gw - col) len = p->gw - col;
+    if (len <= 0) return;
+    unwide(p, p->want + row * p->gw, col, len);
     q = &p->want[row * p->gw + col];
     for (i = 0; i < len; i++, q++) {
         unsigned char c = s[i];
@@ -353,6 +492,8 @@ void TuiFill(struct Tui *t, LONG col, LONG row, LONG w, ULONG c, LONG fg, LONG b
     if (!p || row < 0 || row >= p->gh) return;
     if (col < 0) { w += col; col = 0; }
     if (w > p->gw - col) w = p->gw - col;
+    if (w <= 0) return;
+    unwide(p, p->want + row * p->gw, col, w);
     c = cellable(p, c);
     if (c & FB_REV) {
         c &= ~FB_REV;
@@ -532,7 +673,15 @@ void TuiFlush(struct Tui *t)
     for (r = 0; r < p->gh; r++) {
         Cell *w = p->want + r * p->gw, *s = p->shown + r * p->gw;
         for (c = 0; c < p->gw; c++) {
-            if (w[c].c == s[c].c && w[c].fg == s[c].fg && w[c].bg == s[c].bg && w[c].at == s[c].at)
+            /* a wide character is sent once, for both its cells: when
+             * either changed */
+            int wide = c + 1 < p->gw && w[c + 1].c == TAIL;
+            if (w[c].c == TAIL) {           /* its left half was just sent */
+                s[c] = w[c];
+                continue;
+            }
+            if (w[c].c == s[c].c && w[c].fg == s[c].fg && w[c].bg == s[c].bg && w[c].at == s[c].at &&
+                (!wide || s[c + 1].c == TAIL))
                 continue;
             if (!p->pub.CTerm && r == p->gh - 1 && c == p->gw - 1) {
                 s[c] = w[c];                /* a console that would scroll there */
@@ -544,6 +693,11 @@ void TuiFlush(struct Tui *t)
             putch(p, w[c].c);
             s[c] = w[c];
             p->curx++;
+            if (wide) {
+                s[c + 1] = w[c + 1];
+                p->curx++;
+                c++;
+            }
             if (p->curx >= p->gw) p->curx = -1;  /* the wrap is not ours to guess */
         }
     }

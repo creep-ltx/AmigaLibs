@@ -28,7 +28,7 @@
 
 #define TUINAME    "tui.library"
 #define TUIVERSION  0               /* the version and revision this header */
-#define TUIREVISION 4               /* describes: 0.2 (OpenLibrary asks for the
+#define TUIREVISION 5               /* describes: 0.2 (OpenLibrary asks for the
                                      * version; while it is 0, check
                                      * lib_Revision for the newer calls) */
 

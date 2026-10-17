@@ -26,7 +26,7 @@ AMIGA   ?= $(firstword $(wildcard /opt/amiga $(HOME)/opt/amiga))
 CC      = $(AMIGA)/bin/m68k-amigaos-gcc
 OBJDUMP = $(AMIGA)/bin/m68k-amigaos-objdump
 SFDC    = $(AMIGA)/bin/sfdc
-WARN    = -Os -noixemul -fomit-frame-pointer -fno-common -fbbb=- -Wall -Wno-pointer-sign -Iinclude -Isrc
+WARN    = -Os -noixemul -fomit-frame-pointer -fno-common -fbbb=- -Wall -Wno-pointer-sign -Iinclude -Isrc -I../utf8/include
 CFLAGS  = $(WARN) -m68020
 LIBFLAGS = -fno-builtin -ffreestanding -DTUI_LIB
 NIX13   = $(AMIGA)/m68k-amigaos/libnix/lib/libnix13.a
@@ -38,7 +38,7 @@ CPU_060 = -m68060
 ARITH_000 = $(NIX13)
 
 all: $(foreach c,$(CPUS),build/$(c)/tui.library) build/libtui.a build/libtuiglue.a \
-     build/libtuiglue_static.a build/tuitest build/tuitest_static build/tuibench cutilscheck
+     build/libtuiglue_static.a build/tuitest build/tuitest_static build/tuibench build/widetest cutilscheck
 
 build/start.o: src/start.s
 	@mkdir -p build
@@ -102,6 +102,10 @@ build/libtuiglue_static.a: build/glue_static.o
 	rm -f $@ && $(AMIGA)/bin/m68k-amigaos-ar rcs $@ $^
 
 build/tuitest: tests/tuitest.c build/libtuiglue.a
+	$(CC) $(CFLAGS) -s -o $@ $< -Lbuild -ltuiglue
+
+# wide characters and accents, to look at (tests/widetest.c)
+build/widetest: tests/widetest.c build/libtuiglue.a
 	$(CC) $(CFLAGS) -s -o $@ $< -Lbuild -ltuiglue
 
 build/tuitest_static: tests/tuitest.c build/libtuiglue_static.a build/libtui.a

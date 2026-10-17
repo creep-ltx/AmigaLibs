@@ -114,3 +114,14 @@ int tui_noterm(TuiEv *e)
     e->type = TE_END;
     return 1;
 }
+
+/* the cells c takes, as the grid has it (0.5); an older tui.library put
+ * every character in one cell */
+LONG tui_charwidth(ULONG c)
+{
+#ifndef TUI_STATIC
+    if (!haslib() || TuiBase->lib_Revision < 5)
+        return c < 32 || (c >= 0x7F && c < 0xA0) ? -1 : 1;
+#endif
+    return TuiCharWidth(c);
+}
