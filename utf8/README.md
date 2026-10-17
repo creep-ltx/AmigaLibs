@@ -5,10 +5,6 @@ UTF-8 is the text of the web, of mail and of every modern computer; the Amiga's 
 Latin-1. This library sits between the two, so a program can count, measure, cut, search, compare
 and convert UTF-8 without carrying its own tables.
 
-Nothing like it existed for the 68k Amiga (2026-10): codesets.library converts between sets for
-mail programs, but nothing counts characters and columns, moves a cursor, or searches without
-case and accents across all of Unicode.
-
 ## What it does
 
 | | |
@@ -21,10 +17,11 @@ case and accents across all of Unicode.
 | **Search and compare** | with or without case and accents: "malmo" finds "Malmö" (`Utf8Find`, `Utf8Compare`) |
 | **Mac file names** | å as one character or as a + ring, either way (`Utf8Normalize`); compared as the same everywhere |
 | **14 character sets** | to and from Latin-1, Latin-2, Latin-9, Cyrillic, Greek, Turkish, Windows 1250/1251/1252, IBM 437/850/866, KOI8-R, Mac Roman, ASCII; by name (`Utf8Charset`); the nearest for what a set lacks: “ ” to ", € to EUR, box lines to + - \| |
+| **Other scripts in Latin letters** | where a set lacks them, Russian and the other Cyrillic languages, Greek, Japanese kana and Korean are spelt out: Привет to Privet, Ωμέγα to Omega, こんにちは to konnichiha, 서울 to seoul; Chinese characters and kanji `?` |
 | **Amiga text welcome** | a byte that is not UTF-8 is its Latin-1 letter, so Amiga text works in every call, unchanged |
 | **ARexx** | `UTF8LEN`, `UTF8WIDTH`, `UTF8SUBSTR`, `UTF8UPPER`, `UTF8TO`, `UTF8FROM`, `UTF8FIND` and more, counting characters where ARexx counts bytes |
 | **Unicode 16** | widths, case and classes for all 1,114,112 code points, checked against Python's Unicode database |
-| **Small machines** | 68000 and up, no FPU, no recursion, under 0.5 KB of stack, nothing kept between calls; about 32 KB |
+| **Small machines** | 68000 and up, no FPU, no recursion, under 0.5 KB of stack, nothing kept between calls; about 40 KB |
 
 ## For programmers
 
@@ -86,6 +83,19 @@ No FPU build: the library does no floating point.
 
 ## State
 
+**0.1b2, 2026-10-17.** Other scripts spelt in Latin letters, and Utf8ToCharset several times
+faster on a 68000 (Russian 15 times, Chinese characters 14, Japanese 7). Tested:
+
+- **On the PC:** 197 unit checks under ASan and UBSan (every Hangul syllable among them); widths,
+  case, classes and accent removal for all 1,114,112 code points, the 14 sets byte by byte, and
+  NFC/NFD for Latin, Greek, Cyrillic, kana and Hangul, all equal to Python 3.14's Unicode 16.0;
+  Utf8ToCharset's quick way equal to the full way for every code point in five surroundings, cut
+  short and whole, and for 400,000 random mixes (`make lanecheck`); libFuzzer, now also checking
+  that a cut result is the start of the whole one.
+- **In FS-UAE:** `utf8test` (the same 197 checks through the library) passed on the A1200 test
+  machine (68EC020, OS 3.2.1, the 020 build), on Workbench 3.1 (020 build) and on an A600 (68000,
+  Kickstart 3.1, the 000 build).
+
 **0.1b1, 2026-10-17.** Tested:
 
 - **On the PC:** 178 unit checks under ASan and UBSan; widths, case, classes and accent removal for
@@ -101,5 +111,6 @@ No FPU build: the library does no floating point.
   and English text, 0.9-6 MB/s for Japanese and emoji.
 - **Not yet:** a real 68000, 68040 or 68060; Kickstart 1.3.
 
-**Next:** tui.library, CTerm, csh and the CUtils taking their UTF-8 work from here; Japanese and
-emoji text faster (see the guide's [Speed](docs/guide.md#speed)).
+**Next:** tui.library, CTerm, csh and the CUtils taking their UTF-8 work from here; the other
+calls (Utf8Width, Utf8Find) as quick for Japanese and emoji as Utf8ToCharset now is (see the
+guide's [Speed](docs/guide.md#speed)).

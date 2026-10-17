@@ -326,15 +326,32 @@ static ULONG compose(ULONG base, ULONG mark)
     if (base >= SBASE && base < SBASE + NSYL && mark > TBASE && mark < TBASE + 28 &&
         (base - SBASE) % 28 == 0)
         return base + (mark - TBASE);
-    if (mark < 0x300 || mark > 0xFFFF || base > 0xFFFF) return 0;
+    /* the marks that join are U+0300-0345 and the kana's two (gen.py checks) */
+    if (mark < 0x300 || (mark > 0x345 && mark != 0x3099 && mark != 0x309A) || base > 0xFFFF)
+        return 0;
     for (i = 0; i < u8_marks_n; i++)
         if (u8_marks[i] == mark) {
             m = i;
             break;
         }
     if (m < 0) return 0;
-    for (i = 0; i < u8_comp_n; i++)       /* (an excluded pair has bit 7) */
-        if (u8_comp_base[i] == base && u8_comp_mark[i] == m) return u8_comp_ch[i];
+    {                                   /* halve u8_comp_byb to the letter's pairs */
+        LONG a = 0, z = u8_comp_n - 1, j;
+        while (a <= z) {
+            LONG h = (a + z) >> 1;
+            j = u8_comp_byb[h];
+            if (u8_comp_base[j] < base || (u8_comp_base[j] == base && (u8_comp_mark[j] & 0x7F) < m))
+                a = h + 1;
+            else
+                z = h - 1;
+        }
+        /* a: the first pair of (base, m) or after; an excluded pair has bit 7 */
+        for (; a < u8_comp_n; a++) {
+            j = u8_comp_byb[a];
+            if (u8_comp_base[j] != base || (u8_comp_mark[j] & 0x7F) != m) break;
+            if (u8_comp_mark[j] == m) return u8_comp_ch[j];
+        }
+    }
     return 0;
 }
 
@@ -353,6 +370,7 @@ ULONG Utf8NoAccent(ULONG c)
     if (c < 0xC0) return c;
     while ((i = compat(c)) >= 0 && n++ < 4)
         c = u8_comp_base[i];
+    if (c > 0x1D7B) return c;           /* past plain[]'s last */
     for (i = 0; i < (LONG)(sizeof(plain) / sizeof(plain[0])); i++)
         if (plain[i][0] == c) return plain[i][1];
     return c;
@@ -537,6 +555,20 @@ typedef struct {
     ULONG pend;                     /* a mark still to give, or 0 */
 } Keys;
 
+/* can what starts at p join the character before (compose() could put it
+ * on)? Only U+0300-036F (bytes CC, CD), the kana's marks U+3099-309A
+ * and Hangul's vowels and finals U+1161-11C2 (E1 85-87): the rest of
+ * Cyrillic, Greek, CJK text is not decoded twice */
+static inline __attribute__((always_inline)) int joins(const UBYTE *p, const UBYTE *e)
+{
+    UBYTE b = *p;
+    if (b < 0xCC) return 0;
+    if (b <= 0xCD) return 1;
+    if (b == 0xE1) return p + 1 < e && p[1] >= 0x85 && p[1] <= 0x87;
+    if (b == 0xE3) return p + 2 < e && p[1] == 0x82 && (p[2] == 0x99 || p[2] == 0x9A);
+    return 0;
+}
+
 static void keysinit(Keys *k, CONST_STRPTR s, LONG len, ULONG flags)
 {
     k->p = (const UBYTE *)s;
@@ -556,7 +588,7 @@ static int nextkey(Keys *k, ULONG *key)
     }
     if (k->p >= k->e) return 0;
     k->p += getq(k->p, k->e, &c);
-    while (k->p < k->e && *k->p >= 0xCC) {  /* (marks are U+0300 and up) */
+    while (k->p < k->e && joins(k->p, k->e)) {
         n = get(k->p, k->e, &m);
         if (m < 0x300) break;
         if (EXCLUDED(m) && (i = compat(m)) >= 0 && (u8_comp_mark[i] & 0x80)) {
@@ -830,27 +862,287 @@ static const struct { UWORD c; char s[4]; } near[] = {
     { 0x2718, "x" }, { 0x3000, "  " }, { 0xFB01, "fi" }, { 0xFB02, "fl" }
 };
 
-/* box drawing (U+2500-257F) as - | + */
+/* box drawing (U+2500-257F) as - | + (and / \\ X for the diagonals) */
+static const char boxtab[] =
+    "--||--||--||++++++++++++++++++++++++++++++++++++++++++++++++++++"
+    "++++++++++++--||-|+++++++++++++++++++++++++++++++/\\X-|-|-|-|-|-|";
+
 static char boxchar(ULONG c)
 {
-    if (c == 0x2500 || c == 0x2501 || c == 0x2504 || c == 0x2505 || c == 0x2508 ||
-        c == 0x2509 || c == 0x254C || c == 0x254D || c == 0x2550 || c == 0x2574 ||
-        c == 0x2576 || c == 0x2578 || c == 0x257A || c == 0x257C || c == 0x257E)
-        return '-';
-    if (c == 0x2502 || c == 0x2503 || c == 0x2506 || c == 0x2507 || c == 0x250A ||
-        c == 0x250B || c == 0x254E || c == 0x254F || c == 0x2551 || c == 0x2575 ||
-        c == 0x2577 || c == 0x2579 || c == 0x257B || c == 0x257D || c == 0x257F)
-        return '|';
-    if (c == 0x2571) return '/';
-    if (c == 0x2572) return '\\';
-    if (c == 0x2573) return 'X';
-    return '+';
+    return boxtab[c - 0x2500];
 }
 
-static void putset(Out *o, LONG cs, ULONG c, ULONG flags)
+/* U+2010-2026, the punctuation most text has, as near[] has it (one
+ * byte; '.' for the ellipsis, written as three) */
+static const char punct[23] = {
+    '-', '-', '-', '-', '-', '-', '?', '?', '\'', '\'', ',', '\'', '"', '"', '"', '"',
+    '+', '?', (char)0xB7, '?', '?', '?', '.'
+};
+
+/* ---- other scripts in Latin letters ------------------------------------------- */
+
+/* what a set that lacks them shows for Cyrillic, Greek, kana and Hangul:
+ * the letters spelt out (Привет Privet, Ωμέγα Omega, こんにちは
+ * konnichiwa, 한국 hanguk), as signs and names are written for those who
+ * cannot read the script. Chinese characters and the kanji in Japanese
+ * have no spelling short of a dictionary: they stay '?'. */
+
+/* Cyrillic U+0400-045F (Russian, plus Ukrainian, Belarusian, Serbian and
+ * Macedonian letters); the capitals are the small ones spelt with a
+ * capital first letter */
+static const char cyr[96][5] = {
+    "e", "yo", "dj", "gj", "ye", "dz", "i", "yi", "j", "lj", "nj", "c", "kj", "i", "u", "dz",
+    "a", "b", "v", "g", "d", "e", "zh", "z", "i", "y", "k", "l", "m", "n", "o", "p",
+    "r", "s", "t", "u", "f", "kh", "ts", "ch", "sh", "shch", "\"", "y", "'", "e", "yu", "ya",
+    "a", "b", "v", "g", "d", "e", "zh", "z", "i", "y", "k", "l", "m", "n", "o", "p",
+    "r", "s", "t", "u", "f", "kh", "ts", "ch", "sh", "shch", "\"", "y", "'", "e", "yu", "ya",
+    "e", "yo", "dj", "gj", "ye", "dz", "i", "yi", "j", "lj", "nj", "c", "kj", "i", "u", "dz",
+};
+
+/* Greek U+03B1-03C9, the capitals 0x20 lower; U+03C2 (final sigma) is
+ * where no capital is */
+static const char grk[25][3] = {
+    "a", "v", "g", "d", "e", "z", "i", "th", "i", "k", "l", "m", "n", "x", "o", "p",
+    "r", "s", "s", "t", "y", "f", "ch", "ps", "o",
+};
+
+/* kana U+3041-3096 (hiragana; katakana are the same 0x60 higher), in
+ * Hepburn. '*' marks the small ones that change the kana before; '-' the
+ * small tsu, which doubles the next consonant */
+static const char kana[86][4] = {
+    "*a", "a", "*i", "i", "*u", "u", "*e", "e", "*o", "o",
+    "ka", "ga", "ki", "gi", "ku", "gu", "ke", "ge", "ko", "go",
+    "sa", "za", "shi", "ji", "su", "zu", "se", "ze", "so", "zo",
+    "ta", "da", "chi", "ji", "-", "tsu", "zu", "te", "de", "to", "do",
+    "na", "ni", "nu", "ne", "no",
+    "ha", "ba", "pa", "hi", "bi", "pi", "fu", "bu", "pu", "he", "be", "pe", "ho", "bo", "po",
+    "ma", "mi", "mu", "me", "mo",
+    "*ya", "ya", "*yu", "yu", "*yo", "yo",
+    "ra", "ri", "ru", "re", "ro", "*wa", "wa", "i", "e", "o", "n", "vu", "ka", "ke",
+};
+
+/* Hangul syllables (Revised Romanization, letter by letter): the first
+ * consonant, the vowel, the last consonant as it sounds */
+static const char hl[19][3] = {
+    "g", "kk", "n", "d", "tt", "r", "m", "b", "pp", "s", "ss", "", "j", "jj", "ch", "k", "t", "p", "h"
+};
+static const char hv[21][4] = {
+    "a", "ae", "ya", "yae", "eo", "e", "yeo", "ye", "o", "wa", "wae", "oe", "yo", "u", "wo", "we",
+    "wi", "yu", "eu", "ui", "i"
+};
+static const char ht[28][3] = {
+    "", "k", "k", "k", "n", "n", "n", "t", "l", "k", "m", "l", "l", "l", "p", "l",
+    "m", "p", "p", "t", "t", "ng", "t", "t", "k", "t", "p", "t"
+};
+
+/* what the kana before left, so the next can join it: valid while
+ * nothing else has been written since (at == the output's count) */
+typedef struct {
+    LONG at, w;                 /* w: where the kana before starts in the output */
+    char last[5];               /* its spelling, as written */
+    UBYTE tsu;                  /* a small tsu waits for its consonant */
+} Tr;
+
+static int vowel(char c)
+{
+    return c == 'a' || c == 'i' || c == 'u' || c == 'e' || c == 'o';
+}
+
+static void puts_(Out *o, const char *s)
+{
+    LONG k = 0;
+    while (s[k]) k++;
+    put(o, (const UBYTE *)s, k);
+}
+
+/* take back the last byte written (the kana before's vowel) */
+static void unput(Out *o)
+{
+    if (!o->full) o->w--;
+    o->n--;
+}
+
+/* a spelling with its first letter a capital, in one piece (a character
+ * is written whole or not at all) */
+static void putcap(Out *o, const char *s, int cap)
+{
+    UBYTE t[8];
+    LONG k;
+    for (k = 0; s[k] && k < 7; k++) t[k] = (UBYTE)s[k];
+    if (k && cap && t[0] >= 'a' && t[0] <= 'z') t[0] -= 32;
+    put(o, t, k);
+}
+
+/* 1: it rewrote the end of the kana before */
+static int kanaout1(Out *o, Tr *tr, ULONG c)
+{
+    char *l = tr->last;
+    const char *r;
+    LONG n;
+    int joined = tr->at == o->n;
+    if (!joined) {
+        l[0] = 0;
+        tr->tsu = 0;
+    }
+    for (n = 0; l[n]; n++)
+        ;
+    if (c == 0x30FC) {                      /* the long vowel mark: the vowel again */
+        if (n && vowel(l[n - 1])) {
+            UBYTE t = (UBYTE)l[n - 1];
+            put(o, &t, 1);
+        } else
+            puts_(o, "-");
+        tr->at = o->n;
+        return 0;
+    }
+    if (c == 0x309D || c == 0x309E || c == 0x30FD || c == 0x30FE) {     /* the kana again */
+        puts_(o, l);
+        tr->at = o->n;
+        return 0;
+    }
+    if (c >= 0x30F7) {                      /* va vi ve vo */
+        static const char v4[4][3] = { "va", "vi", "ve", "vo" };
+        r = v4[c - 0x30F7];
+    } else
+        r = kana[(c >= 0x30A1 ? c - 0x60 : c) - 0x3041];
+    if (r[0] == '-') {                      /* small tsu */
+        tr->tsu = 1;
+        tr->at = o->n;
+        return 0;
+    }
+    if (r[0] == '*') {                      /* small: joins the kana before */
+        int rw = 0;
+        r++;
+        if (n >= 2 && l[n - 1] == 'i' && r[0] == 'y') {
+            /* ki + ya = kya; shi, chi, ji + ya = sha, cha, ja */
+            unput(o);
+            if ((n == 3 && l[1] == 'h') || (n == 2 && l[0] == 'j')) r++;
+            l[n - 1] = 0;
+            rw = 1;
+        } else if (n >= 2 && vowel(l[n - 1])) {
+            /* fu + a = fa, te + i = ti, shi + e = she, ku + wa = kwa */
+            unput(o);
+            l[n - 1] = 0;
+            rw = 1;
+        } else if (n == 1 && l[0] == 'u' && vowel(r[0])) {
+            unput(o);                       /* u + i = wi */
+            puts_(o, "w");
+            l[0] = 'w';
+            rw = 1;
+        }
+        for (n = 0; l[n]; n++)
+            ;
+        puts_(o, r);
+        while (*r && n < 4) l[n++] = *r++;
+        l[n] = 0;
+        tr->tsu = 0;
+        tr->at = o->n;
+        return rw;
+    }
+    if (tr->tsu && !vowel(r[0]) && r[0] != 'n') {
+        UBYTE t = r[0] == 'c' ? 't' : (UBYTE)r[0];     /* tchi, kka, ssha */
+        put(o, &t, 1);
+    } else if (n == 1 && l[0] == 'n' && (vowel(r[0]) || r[0] == 'y')) puts_(o, "'");
+    tr->tsu = 0;
+    puts_(o, r);
+    for (n = 0; r[n] && n < 4; n++) l[n] = r[n];
+    l[n] = 0;
+    tr->at = o->n;
+    return 0;
+}
+
+/* a small kana rewrites the end of the one before (ki + ya = kya): if the
+ * result does not fit, both go, so a cut result is always the start of
+ * the whole one */
+static void kanaout(Out *o, Tr *tr, ULONG c)
+{
+    LONG w0 = o->w, f0 = o->full;
+    int rewrote = kanaout1(o, tr, c);
+    if (!f0 && o->full) o->w = rewrote ? tr->w : w0;
+    else if (!rewrote) tr->w = w0;          /* where this kana's spelling starts */
+}
+
+/* Hangul syllable s (from U+AC00) spelt into t: its length. The
+ * divisions by 28 and 21 as multiplications (exact for every syllable:
+ * tests/unit.c checks): a 68000 has no 32-bit divide */
+static LONG hangul(UWORD s, UBYTE *t)
+{
+    UWORD q = (UWORD)(((ULONG)s * (UWORD)9363) >> 18);     /* s / 28 */
+    UWORD l = (UWORD)(((ULONG)q * (UWORD)391) >> 13);      /* q / 21 */
+    const char *p;
+    LONG k = 0;
+    for (p = hl[l]; *p; p++) t[k++] = (UBYTE)*p;
+    for (p = hv[q - l * 21]; *p; p++) t[k++] = (UBYTE)*p;
+    for (p = ht[s - q * 28]; *p; p++) t[k++] = (UBYTE)*p;
+    return k;
+}
+
+/* c spelt in Latin letters if it is Cyrillic, Greek, kana or Hangul:
+ * 1; else 0 */
+static int spell(Out *o, Tr *tr, ULONG c)
+{
+    ULONG b;
+    if (c < 0x370) return 0;
+    if (c < 0x400 || (c >= 0x1F00 && c < 0x2000)) {        /* Greek */
+        b = Utf8NoAccent(c);
+        if (b >= 0x391 && b <= 0x3A9 && b != 0x3A2) putcap(o, grk[b - 0x391], 1);
+        else if (b >= 0x3B1 && b <= 0x3C9) putcap(o, grk[b - 0x3B1], 0);
+        else return 0;
+        return 1;
+    }
+    if (c < 0x500) {                                        /* Cyrillic */
+        b = c < 0x460 ? c : Utf8NoAccent(c);
+        if (b == 0x490 || b == 0x491) {                     /* Ukrainian ґ */
+            putcap(o, "g", b == 0x490);
+            return 1;
+        }
+        if (b >= 0x460) return 0;
+        putcap(o, cyr[b - 0x400], b < 0x430);
+        return 1;
+    }
+    if (c < 0x3041) return 0;
+    if (c <= 0x30FE) {                                      /* kana */
+        if (c <= 0x3096 || (c >= 0x309D && c <= 0x309E) || (c >= 0x30A1 && c <= 0x30FA) ||
+            c >= 0x30FC) {
+            kanaout(o, tr, c);
+            return 1;
+        }
+        return 0;
+    }
+    if (c >= 0xAC00 && c < 0xAC00 + 11172) {                /* Hangul syllables */
+        UBYTE t[8];
+        put(o, t, hangul((UWORD)(c - 0xAC00), t));
+        return 1;
+    }
+    return 0;
+}
+
+/* c's stand-in from near[] (sorted: halved), in set cs: 1; else 0 */
+static int nearput(Out *o, LONG cs, ULONG c)
+{
+    LONG a = 0, z = (LONG)(sizeof(near) / sizeof(near[0])) - 1, i, k;
+    UBYTE t[4];
+    if (c > 0xFFFF) return 0;
+    while (a <= z) {
+        i = (a + z) >> 1;
+        if (c < near[i].c) z = i - 1;
+        else if (c > near[i].c) a = i + 1;
+        else {
+            const UBYTE *s = (const UBYTE *)near[i].s;
+            for (k = 0; s[k]; k++) {
+                t[k] = setbyte(cs, s[k]);
+                if (!t[k]) t[k] = s[k] == 0xB7 ? '*' : '?';
+            }
+            put(o, t, k);                   /* whole, as every character */
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void putset(Out *o, Tr *tr, LONG cs, ULONG c, ULONG flags)
 {
     UBYTE t, q = '?';
-    LONG i;
     ULONG b;
     if (cs == U8CS_UTF8) {
         putc8(o, c);
@@ -867,6 +1159,18 @@ static void putset(Out *o, LONG cs, ULONG c, ULONG flags)
         return;
     if (flags & U8F_STRICT) {
         put(o, &q, 1);
+        return;
+    }
+    if (c >= 0x370 && spell(o, tr, c)) return;
+    if (c >= 0x3400 && c < 0xFF01 && plainwide(c)) {        /* Chinese, Japanese kanji */
+        put(o, &q, 1);
+        return;
+    }
+    if (c >= 0x1F000) {                     /* emoji and signs */
+        if (c >= 0x1F3FB && c <= 0x1F3FF) return;           /* skin tones: nothing */
+        if (c >= 0x1F1E6 && c <= 0x1F1FF) t = (UBYTE)('A' + c - 0x1F1E6);  /* flags: SE */
+        else t = '?';
+        put(o, &t, 1);
         return;
     }
     if (c >= 0x300 && !plainwide(c) && (kind(c) & UC_MARK)) return;     /* an accent left over */
@@ -888,37 +1192,241 @@ static void putset(Out *o, LONG cs, ULONG c, ULONG flags)
         put(o, &t, 1);
         return;
     }
-    if (c <= 0xFFFF) {                      /* near[] is sorted */
-        LONG a = 0, z = (LONG)(sizeof(near) / sizeof(near[0])) - 1;
-        while (a <= z) {
-            i = (a + z) >> 1;
-            if (c < near[i].c) z = i - 1;
-            else if (c > near[i].c) a = i + 1;
-            else {
-                const UBYTE *s = (const UBYTE *)near[i].s;
-                for (; *s; s++) {
-                    t = setbyte(cs, *s);
-                    if (!t && *s >= 0x80) t = *s == 0xB7 ? '*' : '?';
-                    put(o, t ? &t : &q, 1);
-                }
-                return;
-            }
-        }
+    if (!nearput(o, cs, c)) put(o, &q, 1);
+}
+
+/* the quick way for a whole letter of another script into Latin-1 or
+ * ASCII (no set has them, so no set to search): what putset() would do,
+ * without its tests for invisible and leftover characters, none of which
+ * are here. 0: not one of these, putset() is asked */
+static int other(Out *o, Tr *tr, LONG cs, ULONG c)
+{
+    UBYTE q = '?';
+    if (c < 0x388) return 0;
+    if (c < 0x3CF) {                                /* Greek */
+        if (c >= 0x3B1 && c <= 0x3C9) putcap(o, grk[c - 0x3B1], 0);
+        else if (c >= 0x391 && c <= 0x3A9 && c != 0x3A2) putcap(o, grk[c - 0x391], 1);
+        else return spell(o, tr, c);                /* with an accent */
+        return 1;
     }
-    put(o, &q, 1);
+    if (c < 0x400) return 0;
+    if (c < 0x460) {                                /* Cyrillic */
+        putcap(o, cyr[(UWORD)c - 0x400], c < 0x430);
+        return 1;
+    }
+    if (c < 0x2010) return 0;
+    if (c < 0x2800) {                               /* punctuation, arrows, signs, boxes */
+        /* not the invisible ones (2028-202F, 2060-), marks for signs (20D0-),
+         * letterlike signs that are letters (2100-214F, K is K) */
+        if ((c >= 0x2028 && c < 0x2030) || (c >= 0x205F && c < 0x2190)) return 0;
+        if (c >= 0x2500 && c <= 0x257F) {
+            UBYTE b = (UBYTE)boxchar(c);
+            put(o, &b, 1);
+        } else if (!nearput(o, cs, c))
+            put(o, &q, 1);
+        return 1;
+    }
+    if (c < 0x3041) return 0;
+    if (c <= 0x30FE) return spell(o, tr, c);       /* kana */
+    if (c < 0x3400) return 0;
+    if (c < 0xAC00) {
+        if (!plainwide(c)) return 0;
+        put(o, &q, 1);                              /* Chinese, Japanese kanji */
+        return 1;
+    }
+    if (c < 0xD7A4) return spell(o, tr, c);        /* Hangul */
+    if (c < 0x1F000 || c > 0x1FAFF || (c >= 0x1F3FB && c <= 0x1F3FF) || (c >= 0x1F1E6 && c <= 0x1F1FF))
+        return 0;
+    put(o, &q, 1);                                  /* emoji */
+    return 1;
+}
+
+/* Utf8ToCharset's tight loop into Latin-1 or ASCII: ASCII, Latin-1's
+ * own letters, Cyrillic, Greek, kana, Hangul, Chinese characters, the
+ * common punctuation, box lines and emoji, each with nothing joining it, written straight on with the output's place in registers.
+ * On a 68000 the way through nextkey() and putset() costs some thousand
+ * cycles a character; this a fraction. Stops at anything else, which
+ * the full way does (tests/lane.c: both give the same for every code
+ * point). Returns where it stopped. */
+static __attribute__((noinline)) const UBYTE *run(const UBYTE *p, const UBYTE *e, Out *o, Tr *tr, LONG cs)
+{
+    UBYTE *w = o->buf ? o->buf + o->w : NULL;
+    UBYTE *wend = o->buf ? o->buf + o->size - 1 : NULL;
+    LONG n = o->n, full = o->full || !o->buf, k, l;
+    int latin = cs == U8CS_LATIN1;
+    UBYTE t[8];
+    const char *sp;
+    while (p < e) {
+        UBYTE b = *p;
+        if (b < 0x80) {
+            /* ASCII: the whole run at once, but its last byte only if what
+             * follows cannot join it */
+            const UBYTE *q = p + 1;
+            while (q < e && *q < 0x80) q++;
+            if (q < e && joins(q, e)) q--;
+            if (q > p) {
+                k = q - p;
+                n += k;
+                if (!full) {
+                    if (w + k <= wend) {
+                        do *w++ = *p++; while (p < q);
+                        continue;
+                    }
+                    while (w < wend) *w++ = *p++;
+                    full = 1;
+                }
+                p = q;
+                continue;
+            }
+            l = 1;                          /* an ASCII letter with something after */
+            t[0] = b;
+            k = 1;
+        } else if (b == 0xC2 || b == 0xC3) {    /* Latin-1's own: straight on */
+            if (!latin || p + 1 >= e || (p[1] & 0xC0) != 0x80 || (b == 0xC2 && p[1] < 0xA0)) break;
+            if (p + 2 < e && joins(p + 2, e)) break;
+            if (!full) {
+                if (w < wend) *w++ = (UBYTE)(((b & 3) << 6) | (p[1] & 0x3F));
+                else full = 1;
+            }
+            n++;
+            p += 2;
+            continue;
+        } else if (b < 0xD0 || b > 0xEA) {
+            if (b == 0xCE || b == 0xCF) {   /* Greek without accents */
+                UWORD c;
+                if (p + 1 >= e || (p[1] & 0xC0) != 0x80) break;
+                c = (UWORD)(((b & 0x1F) << 6) | (p[1] & 0x3F));
+                if (c < 0x391 || c > 0x3C9 || c == 0x3A2 || (c > 0x3A9 && c < 0x3B1)) break;
+                sp = grk[c >= 0x3B1 ? c - 0x3B1 : c - 0x391];
+                for (k = 0; sp[k]; k++) t[k] = (UBYTE)sp[k];
+                if (c < 0x3B1) t[0] -= 32;
+                l = 2;
+            } else if (b == 0xEB || b == 0xEC || (b == 0xED && p + 1 < e && p[1] < 0x9F)) {
+                ULONG c;                    /* Hangul, rest of it (EA too, below) */
+                if (p + 2 >= e || (p[1] & 0xC0) != 0x80 || (p[2] & 0xC0) != 0x80) break;
+                c = ((ULONG)(b & 0x0F) << 12) | ((ULONG)(p[1] & 0x3F) << 6) | (p[2] & 0x3F);
+                if (c >= 0xD7A4) break;
+                k = hangul((UWORD)(c - 0xAC00), t);
+                l = 3;
+            } else if (b == 0xF0 && p + 3 < e && p[1] == 0x9F && (p[2] & 0xC0) == 0x80 &&
+                       (p[3] & 0xC0) == 0x80) {
+                ULONG c = 0x1F000 | ((ULONG)(p[2] & 0x3F) << 6) | (p[3] & 0x3F);
+                /* emoji: '?'; skin tones and flags the full way */
+                if (c > 0x1FAFF || (c >= 0x1F3FB && c <= 0x1F3FF) || (c >= 0x1F1E6 && c <= 0x1F1FF)) break;
+                t[0] = '?';
+                k = 1;
+                l = 4;
+            } else
+                break;
+        } else if (b <= 0xD1) {                 /* Cyrillic */
+            UWORD c;
+            if (p + 1 >= e || (p[1] & 0xC0) != 0x80 || (b == 0xD1 && p[1] >= 0xA0)) break;
+            c = (UWORD)(((b & 0x1F) << 6) | (p[1] & 0x3F));
+            sp = cyr[c - 0x400];
+            for (k = 0; sp[k]; k++) t[k] = (UBYTE)sp[k];
+            if (c < 0x430 && t[0] >= 'a' && t[0] <= 'z') t[0] -= 32;
+            l = 2;
+        } else if (b < 0xE2) {
+            break;
+        } else {                                /* three bytes: E2-EA */
+            UWORD c;
+            if (p + 2 >= e || (p[1] & 0xC0) != 0x80 || (p[2] & 0xC0) != 0x80) break;
+            c = (UWORD)(((b & 0x0F) << 12) | ((p[1] & 0x3F) << 6) | (p[2] & 0x3F));
+            l = 3;
+            if (c >= 0x4E00 && c <= 0x9FFF) {   /* Chinese characters and kanji */
+                t[0] = '?';
+                k = 1;
+            } else if (c >= 0xAC00) {           /* Hangul (from EA) */
+                k = hangul((UWORD)(c - 0xAC00), t);
+            } else if (c >= 0x2500 && c <= 0x257F) {
+                t[0] = (UBYTE)boxtab[c - 0x2500];
+                k = 1;
+            } else if (c >= 0x2010 && c <= 0x2026) {
+                t[0] = (UBYTE)punct[c - 0x2010];
+                k = 1;
+                if (c == 0x2026) t[1] = t[2] = '.', k = 3;
+                else if (t[0] == 0xB7 && !latin) t[0] = '*';
+            } else if ((c >= 0x3041 && c <= 0x3096) || c == 0x309D || c == 0x309E ||
+                       (c >= 0x30A1 && c <= 0x30FA) || (c >= 0x30FC && c <= 0x30FE)) {
+                /* kana: an ordinary one straight on, remembered for the one
+                 * after; small ones, the small tsu, the long mark and what
+                 * follows a small tsu or n through kanaout() */
+                if (p + l < e && joins(p + l, e)) break;
+                if (c <= 0x30F6 && c != 0x309D && c != 0x309E) {
+                    const char *r = kana[(c >= 0x30A1 ? c - 0x60 : c) - 0x3041];
+                    int joined = tr->at == n;
+                    if (r[0] != '*' && r[0] != '-' &&
+                        !(joined && (tr->tsu || (tr->last[0] == 'n' && !tr->last[1])))) {
+                        for (k = 0; k < 4 && r[k]; k++) tr->last[k] = r[k];
+                        tr->last[k] = 0;
+                        tr->tsu = 0;
+                        if (o->buf) tr->w = w - o->buf;
+                        if (!full && w + k <= wend) {
+                            LONG i;
+                            for (i = 0; i < k; i++) *w++ = (UBYTE)r[i];
+                        } else
+                            full = 1;
+                        n += k;
+                        tr->at = n;
+                        p += l;
+                        continue;
+                    }
+                }
+                if (o->buf) {
+                    o->w = w - o->buf;
+                    o->full = full;
+                }
+                o->n = n;
+                kanaout(o, tr, c);
+                if (o->buf) {
+                    w = o->buf + o->w;
+                    full = o->full;
+                }
+                n = o->n;
+                p += l;
+                continue;
+            } else
+                break;
+        }
+        if (p + l < e && joins(p + l, e)) break;
+        if (!full && w + k <= wend) {
+            LONG i;
+            for (i = 0; i < k; i++) *w++ = t[i];
+        } else
+            full = 1;
+        n += k;
+        p += l;
+    }
+    if (o->buf) {
+        o->w = w - o->buf;
+        o->full = full;
+    }
+    o->n = n;
+    return p;
 }
 
 LONG Utf8ToCharset(CONST_STRPTR s, LONG len, STRPTR buf, LONG size, LONG cs, ULONG flags)
 {
     Out o;
     Keys k;
+    Tr tr;
     ULONG c;
+    int quicklane;
     outinit(&o, buf, size);
+    tr.at = -1;
     if (cs < 0 || cs >= U8CS_COUNT) return -1;
+    quicklane = (cs == U8CS_LATIN1 || cs == U8CS_ASCII) && !(flags & U8F_STRICT);
+#ifdef NOQUICKLANE
+    quicklane = 0;                          /* tests/lane.c: the same without it */
+#endif
     if (!s) return outend(&o);
     keysinit(&k, s, len, 0);
     while (k.p < k.e || k.pend) {
         LONG q;
+        if (quicklane && !k.pend) {
+            k.p = run(k.p, k.e, &o, &tr, cs);
+            if (k.p >= k.e) break;
+        } else
         /* a run of ASCII straight across */
         if (cs != U8CS_UTF8 && !k.pend) {
             const UBYTE *p = k.p, *e = k.e;
@@ -947,8 +1455,16 @@ LONG Utf8ToCharset(CONST_STRPTR s, LONG len, STRPTR buf, LONG size, LONG cs, ULO
                 continue;
             }
         } else {
+            if (q == 0 && quicklane && !k.pend && k.p < k.e && k.p[0] >= 0xCE) {
+                /* another script's letter with nothing joining it */
+                LONG l = getq(k.p, k.e, &c);
+                if ((k.p + l >= k.e || !joins(k.p + l, k.e)) && other(&o, &tr, cs, c)) {
+                    k.p += l;
+                    continue;
+                }
+            }
             if (!nextkey(&k, &c)) break;
-            putset(&o, cs, c, flags);
+            putset(&o, &tr, cs, c, flags);
             continue;
         }
         if (!o.full && o.w < o.size - 1) o.buf[o.w++] = (UBYTE)c;

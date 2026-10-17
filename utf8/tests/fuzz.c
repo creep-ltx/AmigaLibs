@@ -2,6 +2,7 @@
  * what must hold between them.   make fuzz */
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "../src/port.h"
 
 #define MUST(c) do { if (!(c)) { fprintf(stderr, "broken: %s (line %d)\n", #c, __LINE__); abort(); } } while (0)
@@ -64,6 +65,17 @@ int LLVMFuzzerTestOneInput(const unsigned char *data, size_t size)
         n = Utf8ToCharset(s, len, NULL, 0, k, 0);
         MUST(Utf8ToCharset(s, len, big, size * 12 + 16, k, 0) == n);
         MUST(Utf8ToCharset(s, len, small, sizeof(small), k, U8F_STRICT) >= 0);
+        /* the spelt-out scripts too: a small buffer gets the start of the
+         * whole result (nothing half rewritten); without a 0 in s, all of n */
+        {
+            LONG m;
+            if (memchr(s, 0, len) == NULL) MUST((LONG)strlen(big) == n);
+            for (m = 1; m < 24 && m <= n + 1; m += 3) {
+                char cut[24];
+                MUST(Utf8ToCharset(s, len, cut, m, k, 0) == n);
+                MUST(strlen(cut) < (size_t)m && strncmp(cut, big, strlen(cut)) == 0);
+            }
+        }
         n = Utf8FromCharset(s, len, big, size * 12 + 16, k);
         MUST(Utf8Valid(big, n) == -1);
     }

@@ -90,6 +90,15 @@ pccheck:
 	gcc -std=c99 -O2 -Itests/pcinc -o build/pc/dump tests/dump.c $(PCSRC)
 	build/pc/dump | python3 -I tools/check.py
 
+# the quick lane of Utf8ToCharset gives what the full way gives
+lanecheck:
+	@mkdir -p build/pc
+	gcc -std=c99 -O2 -Itests/pcinc -o build/pc/lane tests/lane.c $(PCSRC)
+	gcc -std=c99 -O2 -Itests/pcinc -DNOQUICKLANE -o build/pc/lanefull tests/lane.c $(PCSRC)
+	build/pc/lane > build/pc/lane.out
+	build/pc/lanefull > build/pc/lanefull.out
+	cmp build/pc/lane.out build/pc/lanefull.out && echo "quick lane: the same for every code point"
+
 fuzz:
 	@mkdir -p build/pc/corpus
 	clang -g -O1 -Itests/pcinc -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all \
@@ -99,4 +108,4 @@ fuzz:
 clean:
 	rm -rf build
 
-.PHONY: all headers tables clean check060 pctest pccheck fuzz
+.PHONY: all headers tables clean check060 pctest pccheck fuzz lanecheck

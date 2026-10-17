@@ -160,11 +160,16 @@ for c, b, m, x in pairs:
         assert 0x340 <= c < 0x388 or 0x1F70 <= c < 0x2130, hex(c)
 marks = sorted(set(m for c, b, m, x in pairs if m is not None))
 assert len(marks) < 127
+# utf8.c's compose() turns away anything else at once: keep it so
+assert all(m <= 0x345 or m in (0x3099, 0x309A) for m in marks)
 arr("UWORD", "u8_marks", marks, 10)
 arr("UWORD", "u8_comp_ch", [c for c, b, m, x in pairs], 10)
 arr("UWORD", "u8_comp_base", [b for c, b, m, x in pairs], 10)
 arr("UBYTE", "u8_comp_mark", [(127 if m is None else marks.index(m)) | (128 if x else 0)
                               for c, b, m, x in pairs], 16, "%d")
+# the pairs in the order of (letter, mark), as indexes: compose() halves it
+byb = sorted(range(len(pairs)), key=lambda i: (pairs[i][1], marks.index(pairs[i][2]) if pairs[i][2] is not None else 127))
+arr("UWORD", "u8_comp_byb", byb, 12, "%d")
 w("const LONG u8_marks_n = %d, u8_comp_n = %d;" % (len(marks), len(pairs)))
 w()
 

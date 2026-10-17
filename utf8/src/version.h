@@ -4,5 +4,5 @@
  * A1200. */
 #define UTF8_VERSION  0
 #define UTF8_REVISION 1
-#define UTF8_VERSTR   "0.1b1"
+#define UTF8_VERSTR   "0.1b2"
 #define UTF8_DATE     "17.10.2026"

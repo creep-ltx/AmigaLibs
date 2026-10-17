@@ -187,6 +187,42 @@ int main(void)
     CHECK(Utf8ToCharset("\xc5\x81\xc3\xb3" "d\xc5\xba", -1, buf, sizeof(buf), U8CS_LATIN1, 0) == 4 &&
           STR(buf, "L\xf3" "dz"));
     CHECK(Utf8ToCharset("\xc5\x81" "x", -1, buf, sizeof(buf), U8CS_LATIN1, U8F_STRICT) == 2 && STR(buf, "?x"));
+    /* other scripts spelt in Latin letters (0.1b2) */
+    {   /* every Hangul syllable: its three parts as plain division gives them */
+        static const char *L[19] = { "g", "kk", "n", "d", "tt", "r", "m", "b", "pp", "s", "ss", "", "j", "jj", "ch", "k", "t", "p", "h" };
+        static const char *V[21] = { "a", "ae", "ya", "yae", "eo", "e", "yeo", "ye", "o", "wa", "wae", "oe", "yo", "u", "wo", "we", "wi", "yu", "eu", "ui", "i" };
+        static const char *T[28] = { "", "k", "k", "k", "n", "n", "n", "t", "l", "k", "m", "l", "l", "l", "p", "l", "m", "p", "p", "t", "t", "ng", "t", "t", "k", "t", "p", "t" };
+        ULONG sy;
+        int ok = 1;
+        for (sy = 0; sy < 11172; sy++) {
+            char one[8], want[16];
+            one[Utf8Encode(0xAC00 + sy, one)] = 0;
+            strcpy(want, L[sy / 588]);
+            strcat(want, V[sy % 588 / 28]);
+            strcat(want, T[sy % 28]);
+            Utf8ToCharset(one, -1, buf, sizeof(buf), U8CS_LATIN1, 0);
+            if (!STR(buf, want)) ok = 0;
+        }
+        CHECK(ok);
+    }
+    CHECK(Utf8ToCharset("\xd0\x9f\xd1\x80\xd0\xb8\xd0\xb2\xd0\xb5\xd1\x82, \xd0\xbc\xd0\xb8\xd1\x80", -1, buf, sizeof(buf), U8CS_LATIN1, 0) >= 0 && STR(buf, "Privet, mir"));
+    CHECK(Utf8ToCharset("\xd0\x96\xd0\xa3\xd0\x9a \xd0\xa9\xd1\x83\xd0\xba\xd0\xb0 \xd0\x81\xd0\xbb\xd0\xba\xd0\xb0 \xd0\xbe\xd0\xb1\xd1\x8a\xd1\x8f\xd0\xb2\xd0\xbb\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xb5", -1, buf, sizeof(buf), U8CS_LATIN1, 0) >= 0 && STR(buf, "ZhUK Shchuka Yolka ob\"yavlenie"));
+    CHECK(Utf8ToCharset("\xd0\x9a\xd0\xb8\xd1\x97\xd0\xb2 \xd2\x90\xd0\xb0\xd0\xbd\xd0\xbe\xd0\xba", -1, buf, sizeof(buf), U8CS_LATIN1, 0) >= 0 && STR(buf, "Kiyiv Ganok"));
+    CHECK(Utf8ToCharset("\xce\xa9\xce\xbc\xce\xad\xce\xb3\xce\xb1 \xce\x91\xce\xb8\xce\xae\xce\xbd\xce\xb1 \xe1\xbc\x84\xce\xbd\xce\xb8\xcf\x81\xcf\x89\xcf\x80\xce\xbf\xcf\x82", -1, buf, sizeof(buf), U8CS_LATIN1, 0) >= 0 && STR(buf, "Omega Athina anthropos"));
+    CHECK(Utf8ToCharset("\xe3\x81\x93\xe3\x82\x93\xe3\x81\xab\xe3\x81\xa1\xe3\x81\xaf", -1, buf, sizeof(buf), U8CS_LATIN1, 0) >= 0 && STR(buf, "konnichiha"));
+    CHECK(Utf8ToCharset("\xe3\x82\xab\xe3\x82\xbf\xe3\x82\xab\xe3\x83\x8a", -1, buf, sizeof(buf), U8CS_LATIN1, 0) >= 0 && STR(buf, "katakana"));
+    CHECK(Utf8ToCharset("\xe3\x81\x8c\xe3\x81\xa3\xe3\x81\x93\xe3\x81\x86", -1, buf, sizeof(buf), U8CS_LATIN1, 0) >= 0 && STR(buf, "gakkou"));
+    CHECK(Utf8ToCharset("\xe3\x81\x8d\xe3\x81\xa3\xe3\x81\xa6 \xe3\x81\xbe\xe3\x81\xa3\xe3\x81\xa1\xe3\x82\x83", -1, buf, sizeof(buf), U8CS_LATIN1, 0) >= 0 && STR(buf, "kitte matcha"));
+    CHECK(Utf8ToCharset("\xe3\x81\x97\xe3\x82\x83\xe3\x81\x97\xe3\x82\x93 \xe3\x81\xa1\xe3\x82\x87\xe3\x81\xa3\xe3\x81\xa8 \xe3\x81\x98\xe3\x82\x85\xe3\x81\x86 \xe3\x81\xb2\xe3\x82\x83\xe3\x81\x8f", -1, buf, sizeof(buf), U8CS_LATIN1, 0) >= 0 && STR(buf, "shashin chotto juu hyaku"));
+    CHECK(Utf8ToCharset("\xe3\x82\xb3\xe3\x83\xbc\xe3\x83\x92\xe3\x83\xbc", -1, buf, sizeof(buf), U8CS_LATIN1, 0) >= 0 && STR(buf, "koohii"));
+    CHECK(Utf8ToCharset("\xe3\x83\x95\xe3\x82\xa1\xe3\x82\xa4\xe3\x83\xab \xe3\x83\x86\xe3\x82\xa3\xe3\x83\xbc \xe3\x82\xa6\xe3\x82\xa3\xe3\x82\xad \xe3\x82\xb7\xe3\x82\xa7\xe3\x82\xa2", -1, buf, sizeof(buf), U8CS_LATIN1, 0) >= 0 && STR(buf, "fairu tii wiki shea"));
+    CHECK(Utf8ToCharset("\xe3\x81\x93\xe3\x82\x93\xe3\x82\x84 \xe3\x81\x8d\xe3\x82\x93\xe3\x81\x88\xe3\x82\x93", -1, buf, sizeof(buf), U8CS_LATIN1, 0) >= 0 && STR(buf, "kon'ya kin'en"));
+    CHECK(Utf8ToCharset("\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e", -1, buf, sizeof(buf), U8CS_LATIN1, 0) >= 0 && STR(buf, "???"));
+    CHECK(Utf8ToCharset("\xec\x95\x88\xeb\x85\x95\xed\x95\x98\xec\x84\xb8\xec\x9a\x94 \xec\x84\x9c\xec\x9a\xb8", -1, buf, sizeof(buf), U8CS_LATIN1, 0) >= 0 && STR(buf, "annyeonghaseyo seoul"));
+    CHECK(Utf8ToCharset("\xf0\x9f\x91\x8d\xf0\x9f\x8f\xbd \xf0\x9f\x87\xb8\xf0\x9f\x87\xaa", -1, buf, sizeof(buf), U8CS_LATIN1, 0) >= 0 && STR(buf, "? SE"));
+    CHECK(Utf8ToCharset("\xe3\x82\x9d", -1, buf, sizeof(buf), U8CS_LATIN1, 0) >= 0 && STR(buf, ""));
+    CHECK(Utf8ToCharset("\xd0\x96", -1, buf, sizeof(buf), U8CS_CYRILLIC, 0) == 1 && (UBYTE)buf[0] == 0xB6);   /* a set with the letter keeps it */
+    CHECK(Utf8ToCharset("\xd0\x96", -1, buf, sizeof(buf), U8CS_LATIN1, U8F_STRICT) == 1 && STR(buf, "?"));
     CHECK(Utf8ToCharset("\xe6\x97\xa5", -1, buf, sizeof(buf), U8CS_LATIN1, 0) == 1 && STR(buf, "?"));
     CHECK(Utf8ToCharset("\xe2\x94\x8c\xe2\x94\x80\xe2\x94\x90", -1, buf, sizeof(buf), U8CS_LATIN1, 0) == 3 &&
           STR(buf, "+-+"));

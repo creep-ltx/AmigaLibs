@@ -16,6 +16,7 @@ extern const LONG u8_upper_delta[], u8_lower_delta[];
 extern const LONG u8_upper_n, u8_lower_n;
 extern const UWORD u8_marks[], u8_comp_ch[], u8_comp_base[];
 extern const UBYTE u8_comp_mark[];
+extern const UWORD u8_comp_byb[];
 extern const LONG u8_marks_n, u8_comp_n;
 extern const UWORD u8_sets[];
 extern const LONG u8_sets_n;

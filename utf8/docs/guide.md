@@ -214,6 +214,17 @@ The Amiga's own text is **Latin-1** (ISO-8859-1). Other Amigas and other compute
 - **UTF-8 in, Amiga out:** `Utf8ToCharset(text, len, buf, size, U8CS_LATIN1, 0)`. What Latin-1
   lacks becomes the nearest it has. With `U8F_STRICT` it becomes `?` instead, for when a guess
   would be wrong (a file name to write back).
+- **Other scripts spelt out (0.1b2):** where the set lacks them, Cyrillic, Greek, Japanese kana and
+  Korean come out in Latin letters, as signs and maps write them for those who cannot read the
+  script: "Привет, мир" gives "Privet, mir", "Ωμέγα" "Omega", "こんにちは" "konnichiha", "コーヒー"
+  "koohii", "안녕하세요" "annyeonghaseyo". Russian as people usually write it (ж zh, щ shch, ы y),
+  Greek letter by letter, kana in Hepburn (small kana join the one before: きゃ kya, っ doubles the
+  next consonant, ー repeats the vowel), Korean in the Revised Romanization, letter by letter.
+  Chinese characters and the kanji in Japanese have no spelling without a dictionary and stay `?`,
+  as do emoji (a flag gives its two letters, 🇸🇪 SE). A set that has the letters keeps them:
+  Cyrillic into `U8CS_CYRILLIC` stays Cyrillic. A spelt letter can be longer than its UTF-8 (щ
+  is two bytes, "shch" four; a Korean syllable is three, its spelling up to seven), so the result
+  can be longer than the text: measure first, or give room.
 - **Amiga in, UTF-8 out:** `Utf8FromCharset(text, len, buf, size, U8CS_LATIN1)`.
 - **A set by its name:** a mail's `charset=iso-8859-2`, an HTTP header, an FTP server's `UTF8`:
   `Utf8Charset("iso-8859-2")` gives `U8CS_LATIN2`, -1 for a name it does not know.
@@ -267,19 +278,35 @@ gives ARexx error 18, a missing one error 17.
 ## Speed
 
 Measured with `tests/utf8test` (4 KB of text, each call for 2 seconds), FS-UAE A1200, 68EC020 at
-14 MHz with fast RAM, OS 3.2.1, the 020 build:
+14 MHz with fast RAM, OS 3.2.1, the 020 build (0.1b2):
 
 | Call | Swedish | English | Japanese + emoji |
 |---|---|---|---|
-| Utf8Width | 132 KB/s | 123 KB/s | 30 KB/s |
-| Utf8Length | 162 KB/s | 153 KB/s | 39 KB/s |
-| Utf8ToCharset (Latin-1) | 129 KB/s | 193 KB/s | 9 KB/s |
-| Utf8Find (NOCASE) | 128 KB/s | 205 KB/s | 9 KB/s |
+| Utf8Width | 131 KB/s | 118 KB/s | 28 KB/s |
+| Utf8Length | 159 KB/s | 150 KB/s | 37 KB/s |
+| Utf8ToCharset (Latin-1) | 196 KB/s | 318 KB/s | 87 KB/s |
+| Utf8Find (NOCASE) | 125 KB/s | 200 KB/s | 12 KB/s |
 
-A plain C loop that only adds up the bytes ran at 444 KB/s on the same machine. A 68000 (A600)
-is about four times slower, a 68040 about four times faster, and an A1200 with Emu68 on a
-PiStorm about a hundred times faster (12-57 MB/s for Latin text). Latin and Cyrillic text takes
-quick paths; Chinese, Japanese, Korean and emoji go through the tables and are slower.
+A plain C loop that only adds up the bytes ran at 444 KB/s on the same machine. A 68040 is
+about four times faster, and an A1200 with Emu68 on a PiStorm about a hundred times faster
+(12-57 MB/s for Latin text, 0.1b1).
+
+On a 68000 (FS-UAE A600, 7 MHz, chip RAM only, Kickstart 3.1, the 000 build), Utf8ToCharset into
+Latin-1, 25-30 KB of each:
+
+| Text | 0.1b1 | 0.1b2 |
+|---|---|---|
+| English (ASCII) | 51 KB/s | 89 KB/s |
+| Swedish and German letters | 12 KB/s | 34 KB/s |
+| Russian | 1 KB/s | 16 KB/s |
+| Japanese kana | 1 KB/s | 12 KB/s |
+| Chinese characters | 1 KB/s | 27 KB/s |
+| Korean | 2 KB/s | 14 KB/s |
+
+Into Latin-1 and ASCII, Utf8ToCharset takes ASCII, Latin-1's letters, Cyrillic, Greek, kana,
+Hangul, Chinese characters, the common punctuation, box lines and emoji in one tight loop when no
+accent follows to join them; everything else, and every other set, goes the full way. Both give
+the same for every code point (`make lanecheck`).
 
 ## Versions
 

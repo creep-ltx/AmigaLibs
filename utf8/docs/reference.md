@@ -636,7 +636,7 @@ length - the bytes the whole result needs, without the 0; -1 when cs
          is not a set
 ```
 
-**Notes:** Without U8F_STRICT, what the set lacks becomes the nearest it has: the letter without its accent (Ł gives L in Latin-1), typographic quotes and dashes give " ' -, … gives ..., € gives EUR (in sets without €), ™ gives TM, ≤ gives <=, box lines give - | +, a full block #, a fullwidth Ａ an A. What has nothing near (Chinese, emoji) gives '?'. Invisible characters (zero-width joiners, variation selectors, a byte order mark) give nothing. One character can give up to three bytes, so the result can be longer than the text. A result that does not fit stops at a whole character, with its 0.
+**Notes:** Without U8F_STRICT, what the set lacks becomes the nearest it has: the letter without its accent (Ł gives L in Latin-1), typographic quotes and dashes give " ' -, … gives ..., € gives EUR (in sets without €), ™ gives TM, ≤ gives <=, box lines give - | +, a full block #, a fullwidth Ａ an A. Cyrillic, Greek, Japanese kana and Korean are spelt in Latin letters (0.1b2): Привет gives Privet, Ωμέγα Omega, こんにちは konnichiha, 서울 seoul; small kana join the kana before (きゃ kya). What has nothing near (Chinese characters, kanji, emoji) gives '?'; a flag gives its two letters. Invisible characters (zero-width joiners, variation selectors, a byte order mark, skin tones) give nothing. One character can give up to seven bytes (a Korean syllable), so the result can be longer than the text. A result that does not fit stops at a whole character, with its 0, and is always the start of the whole result.
 
 **See also:** [Utf8FromCharset](#utf8fromcharset), [Utf8Charset](#utf8charset), [Utf8NoAccent](#utf8noaccent)
 
