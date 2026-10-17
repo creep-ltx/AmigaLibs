@@ -418,7 +418,7 @@ max     - how many to keep (1 or more)
 results - the results, or NULL (out of memory, max < 1)
 ```
 
-**Notes:** It reads the whole index: on a 68000 that is seconds for 20,000 entries. Entries missing a letter of the pattern are skipped quickly (a letter fingerprint).
+**Notes:** It reads the whole index, so it takes longer the bigger the index and the slower the processor and the drive. Entries missing a letter of the pattern are skipped quickly (a letter fingerprint).
 
 **See also:** [FuzzyFreeResults](#fuzzyfreeresults), [FuzzyScore](#fuzzyscore)
 

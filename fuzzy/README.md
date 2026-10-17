@@ -3,10 +3,6 @@
 **Fuzzy matching** as fzf does it, and the **FuzzyFind index**: a catalogue of every file and
 drawer on the Amiga's disks. One shared library in `LIBS:`, from C and from **ARexx**.
 
-Nothing like it existed (checked on Aminet, 2026-10-16): no fuzzy matching at all, and only old
-`locate`s (GNU findutils 4.1 with ixemul, fdb, dblocate), none fuzzy and none a library others can
-read.
-
 ## What it does
 
 | | |
@@ -79,6 +75,7 @@ in `src/lib.c` in the same order, new calls at the end; the first entry is ARexx
   A1200's 21,028 paths (the same top five for `dpaint`, `startup`, `ahiru`, `mod`, `readme`).
 - **In FS-UAE:** `fuzzytest` and `fuzzytest.rexx` on the A1200 test machine (68020, OS 3.2.1) and
   the A600 (68000, 2.05); FuzzyFind's commands on both. The guide's first program ran as written.
-- **Speed** (21,028 paths, one search): 68000 7 MHz chip-only 14-28 s; 68020 14 MHz with fast
-  memory 3-6 s. **Next:** the two hot loops (reading entries, the letter scan) in assembler.
+- **Speed** (21,028 paths, one search; FS-UAE, the index in RAM:, the processor's share only, no
+  real drive): 68000 7 MHz chip-only 14-28 s; 68020 14 MHz with fast memory 3-6 s. Not measured on
+  a real Amiga. **Next:** the two hot loops (reading entries, the letter scan) in assembler.
 - **Not yet:** the real A1200.

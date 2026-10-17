@@ -5,8 +5,8 @@ fuzzy.library does two things:
 - **Fuzzy matching**, as fzf does it: `csrc` finds `config/source.c`, and the best matches come
   first. For file pickers, command history, launchers, "jump to" boxes.
 - **The FuzzyFind index**: a catalogue of every file and drawer on the chosen disks, with size,
-  date and type. FuzzyFind's `updatedb` writes it; any program can read and search it, so "find
-  anything on the Amiga" is instant even on an old hard drive.
+  date and type. FuzzyFind's `updatedb` writes it; any program can read and search it, without
+  walking the disks.
 
 It works from C (and any language that can call a library) and from **ARexx**.
 
@@ -230,25 +230,22 @@ list).
 
 ## Speed
 
-Measured 2026-10-17 in FS-UAE, searching the A1200's 21,028-path index for one word:
+**Not measured on a real Amiga yet.** Measured in FS-UAE (2026-10-17) with the index in RAM:, so
+the processor's share only, one search of a real A1200's 21,028 paths took:
 
-| Machine | One search |
+| Machine (emulated) | One search |
 |---|---|
 | 68000, 7 MHz, chip memory only (A600) | 14-28 s |
 | 68020, 14 MHz, fast memory (A1200) | 3-6 s |
-| PiStorm / Emu68 | a fraction of a second |
 
-A search reads every entry, so it grows with the size of the index. Two things keep it bearable
-on small machines:
+A search reads every entry, so it grows with the size of the index, and on a real machine reading
+the index from its drive comes on top (that depends on the drive: not measured). Two things help:
 
 - **A letter fingerprint:** while the entries are read, the library notes which letters each path
   has (32 bits). A path missing one of the pattern's letters is skipped without being scored:
   `goteborg` took half the time of `dpaint`.
 - **Narrowing:** a program that keeps the matches (as `fzf` does) only needs to look again at
   them when a letter is added; the first letter is the slow one.
-
-An A600 rarely has 21,000 files: with 3,000 a search takes 2-4 s there. Scanning the disk
-instead takes minutes on an old drive.
 
 ## ARexx
 
