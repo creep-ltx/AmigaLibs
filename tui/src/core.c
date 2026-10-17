@@ -86,6 +86,11 @@ typedef struct {
     UBYTE *pastebuf, *pastegive; /* a paste being gathered; the one handed out */
     long pastelen, pastecap;
     int inpaste;
+    /* the tab's title (CTerm), kept to take it away when the program ends
+     * or lends the terminal, and to put it back on resume (0.4: before,
+     * a tab went on saying "fzf" after fzf ended) */
+    int titled;
+    char title[128];
 } Priv;
 
 #define P(t) ((Priv *)(t))
@@ -576,13 +581,26 @@ void TuiRaw(struct Tui *t, LONG col, LONG row, CONST_STRPTR s, LONG n)
     forget(p);
 }
 
+static void sendtitle(Priv *p, const char *title)
+{
+    outs(p, "\x1b]2;");
+    outs(p, title);
+    out(p, "\x07", 1);
+}
+
 void TuiTitle(struct Tui *t, CONST_STRPTR title)
 {
     Priv *p = P(t);
+    int k = 0;
     if (!p || !p->pub.CTerm) return;
-    outs(p, "\x1b]2;");
-    outs(p, (const char *)title);
-    out(p, "\x07", 1);
+    if (!title) title = (CONST_STRPTR)"";
+    while (title[k] && k < (int)sizeof(p->title) - 1) {
+        p->title[k] = title[k];
+        k++;
+    }
+    p->title[k] = 0;
+    p->titled = k > 0;
+    sendtitle(p, p->title);
 }
 
 void TuiBeep(struct Tui *t)
@@ -1085,6 +1103,7 @@ static void modes_on(Priv *p)
         p->pub.UTF8 = 1;
         outs(p, "\x1b[?1000h\x1b[?1002h\x1b[?1006h");   /* the mouse, with drags */
         outs(p, "\x1b[?2004h");     /* pastes marked (and modern keys: CTerm) */
+        if (p->titled) sendtitle(p, p->title);  /* back after a suspend */
     } else
         p->pub.UTF8 = 0;
     forget(p);
@@ -1094,6 +1113,7 @@ static void modes_off(Priv *p)
 {
     outs(p, "\x1b[12}\x1b[0m\x1b[?7h\x1b[>1h");
     if (p->pub.CTerm) {
+        if (p->titled) sendtitle(p, "");   /* the tab is CTerm's again */
         outs(p, "\x1b[?2004l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?25h");
         outs(p, "\x1b%@");          /* the Shell's characters again */
     } else

@@ -63,7 +63,9 @@ in `src/lib.c` in the same order, new calls at the end; the first entry is ARexx
 | `src/rexx.c`, `src/lib.c`, `src/start.s` | ARexx, the library itself |
 | `src/port.h` | memory and files on the Amiga or the PC |
 | `docs/guide.md`, `docs/reference.md` | the programmer's guide and the reference |
+| `src/hot.s` | the two hottest loops in 68000 assembler (C stands in on the PC) |
 | `tests/unit.c`, `rank.c`, `mkindex.c` | the PC tests and tools |
+| `tests/prof.c`, `prof2.c` | where a search's time goes, on the Amiga |
 | `tests/fuzzytest.c`, `fuzzytest.rexx` | the calls on the Amiga, from C and ARexx; timing |
 
 ## State
@@ -77,5 +79,12 @@ in `src/lib.c` in the same order, new calls at the end; the first entry is ARexx
   the A600 (68000, 2.05); FuzzyFind's commands on both. The guide's first program ran as written.
 - **Speed** (21,028 paths, one search; FS-UAE, the index in RAM:, the processor's share only, no
   real drive): 68000 7 MHz chip-only 14-28 s; 68020 14 MHz with fast memory 3-6 s. Not measured on
-  a real Amiga. **Next:** the two hot loops (reading entries, the letter scan) in assembler.
+  a real Amiga.
+- **Tuned 2026-10-17:** the two hot loops in 68000 assembler (`src/hot.s`: copying an entry's new
+  bytes with their fingerprint; the letter scan), and the name's start kept from entry to entry
+  instead of a scan per path. Same results (PC tests; the same match counts on the Amiga). On the
+  emulated 68000 **no measurable gain** (within the run-to-run spread of 1-2 s): timing each stage
+  (`tests/prof.c`, `prof2.c`) showed the cost spread over many small steps per entry, and looking
+  at every letter of every path once is itself about 7 s there. A real gain on a 68000 needs a
+  different index layout (proposed, not started).
 - **Not yet:** the real A1200.

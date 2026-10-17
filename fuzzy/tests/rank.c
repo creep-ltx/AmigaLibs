@@ -32,6 +32,14 @@ int main(int argc, char **argv)
     printf("%ld paths, index %ld KB\n", (long)n, ftell(f) / 1024);
     fclose(f);
     x = FuzzyOpenIndex("/tmp/rank.index", NULL);
+    {   /* the name offsets the reader keeps must equal a full scan's */
+        struct FuzzyEntry e;
+        LONG bad = 0;
+        while (FuzzyNextEntry(x, &e))
+            if (e.NameOffset != fuzzy_nameoffset((const UBYTE *)e.Path, e.PathLen)) bad++;
+        printf("name offsets: %ld wrong\n", (long)bad);
+        FuzzyRewind(x);
+    }
     for (i = 2; i < argc; i++) {
         struct FuzzyResults *r = FuzzySearch(x, argv[i], 0, 5);
         LONG j;

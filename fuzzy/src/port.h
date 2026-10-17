@@ -93,6 +93,28 @@ LONG FuzzyAddEntry(FuzzyWriter *w, struct FuzzyEntry *e);
 LONG FuzzyEndIndex(FuzzyWriter *w, LONG keep);
 CONST_STRPTR FuzzyErrorText(LONG error);
 
+/* the two hottest loops: by hand in hot.s on the Amiga, C on the PC */
+#ifdef __amigaos__
+ULONG fz_copymask(const UBYTE *src, UBYTE *dst, ULONG *mk, const ULONG *mtab, LONG n, ULONG m);
+const UBYTE *fz_scan(const UBYTE *q, const UBYTE *qe, const UBYTE *fold, ULONG want);
+#else
+static inline ULONG fz_copymask(const UBYTE *src, UBYTE *dst, ULONG *mk, const ULONG *mtab, LONG n, ULONG m)
+{
+    while (n-- > 0) {
+        UBYTE c = *src++;
+        *dst++ = c;
+        m |= mtab[c];
+        *mk++ = m;
+    }
+    return m;
+}
+static inline const UBYTE *fz_scan(const UBYTE *q, const UBYTE *qe, const UBYTE *fold, ULONG want)
+{
+    while (q < qe && fold[*q] != (UBYTE)want) q++;
+    return q;
+}
+#endif
+
 /* inside the core */
 LONG fuzzy_nameoffset(const UBYTE *path, LONG len);
 LONG fuzzy_score(FuzzyPattern *p, const UBYTE *t, LONG len, LONG name, UWORD *pos, LONG maxpos);

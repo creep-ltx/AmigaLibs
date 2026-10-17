@@ -259,6 +259,7 @@ struct Index {
     LONG bp, blen;
     LONG read;
     LONG pathlen;
+    LONG nameoff;                   /* where the name starts in path */
     int bad, eof;
     struct { UBYTE len; UBYTE name[256]; ULONG date; } vol[MAXVOL];
     ULONG mtab[256];                /* a byte's bit in the letter fingerprint */
@@ -376,7 +377,7 @@ struct FuzzyIndex *FuzzyOpenIndex(CONST_STRPTR name, LONG *error)
         return NULL;
     }
     x->bp = x->blen = x->pos = 0;
-    x->read = x->pathlen = 0;
+    x->read = x->pathlen = x->nameoff = 0;
     x->bad = x->eof = 0;
     if (!(x->fh = f_openr(name))) {
         jfree(x);
@@ -437,7 +438,7 @@ void FuzzyRewind(struct FuzzyIndex *p)
 {
     struct Index *x = IX(p);
     if (!x) return;
-    x->read = x->pathlen = 0;
+    x->read = x->pathlen = x->nameoff = 0;
     x->bad = 0;
     if (x->start >= x->pos - x->blen && x->start <= x->pos)
         x->bp = x->start - (x->pos - x->blen);  /* still in the buffer */
@@ -481,7 +482,7 @@ static void topup(struct Index *x)
 
 /* the next entry into x->path (and its fingerprint into x->mask[]), its
  * type, protection, size and date into the arguments */
-static int nextraw(struct Index *x, UBYTE *type, UBYTE *prot, ULONG *size, ULONG *date, int domask)
+static inline int nextraw(struct Index *x, UBYTE *type, UBYTE *prot, ULONG *size, ULONG *date, int domask)
 {
     ULONG shared, rest, m;
     const UBYTE *q, *end;
@@ -500,12 +501,9 @@ static int nextraw(struct Index *x, UBYTE *type, UBYTE *prot, ULONG *size, ULONG
     if (domask) {                       /* FuzzySearch: it rewinds first, so all are made */
         mk = x->mask + shared;
         m = *mk++;
-        for (n = rest; n > 0; n--) {    /* the new bytes, and their fingerprint */
-            UBYTE c = *q++;
-            *d++ = c;
-            m |= mt[c];
-            *mk++ = m;
-        }
+        fz_copymask(q, d, mk, mt, rest, m);     /* the new bytes, and their fingerprint */
+        q += rest;
+        d += rest;
     } else {
         for (n = rest; n > 0; n--) *d++ = *q++;
     }
@@ -517,6 +515,21 @@ static int nextraw(struct Index *x, UBYTE *type, UBYTE *prot, ULONG *size, ULONG
     x->pathlen = shared + rest;
     *d = 0;
     x->read++;
+    /* where the name starts, without scanning the whole path: after a / or
+     * : in the new bytes; else where the last path's name started, if the
+     * shared part reaches it (no separator can be between); else scan the
+     * shared part (going up out of a drawer). On a 68000 scanning every
+     * path for its name was a quarter of reading the index. */
+    {
+        const UBYTE *pp = x->path;
+        LONG i = x->pathlen;
+        while (i > (LONG)shared && pp[i - 1] != '/' && pp[i - 1] != ':') i--;
+        if (i == (LONG)shared && (LONG)shared < x->nameoff)
+            while (i > 0 && pp[i - 1] != '/' && pp[i - 1] != ':') i--;
+        else if (i == (LONG)shared && i > 0 && pp[i - 1] != '/' && pp[i - 1] != ':')
+            i = x->nameoff;
+        x->nameoff = i;
+    }
     return 1;
 bad:
     x->bad = 1;                     /* cut short or damaged: the end */
@@ -529,7 +542,7 @@ LONG FuzzyNextEntry(struct FuzzyIndex *p, struct FuzzyEntry *e)
     if (!x || !e || !nextraw(x, &e->Type, &e->Prot, &e->Size, &e->Date, 0)) return FALSE;
     e->Path = (CONST_STRPTR)x->path;
     e->PathLen = x->pathlen;
-    e->NameOffset = fuzzy_nameoffset(x->path, x->pathlen);
+    e->NameOffset = x->nameoff;
     e->Pad = 0;
     return TRUE;
 }
@@ -580,11 +593,14 @@ struct FuzzyResults *FuzzySearch(struct FuzzyIndex *p, CONST_STRPTR pattern, ULO
         LONG sc, i;
         UBYTE *copy;
         if (pmask & ~x->mask[x->pathlen]) continue;     /* a letter it lacks */
+#ifdef PROF
+        { extern LONG prof_masked; prof_masked++; }
+#endif
         if ((flags & FSF_FILES) && e.Type != FET_FILE) continue;
         if ((flags & FSF_DRAWERS) && e.Type != FET_DRAWER) continue;
         e.Path = (CONST_STRPTR)x->path;
         e.PathLen = x->pathlen;
-        e.NameOffset = fuzzy_nameoffset(x->path, x->pathlen);
+        e.NameOffset = x->nameoff;
         if (flags & FSF_NAME)
             sc = fuzzy_score(pat, (const UBYTE *)e.Path + e.NameOffset, e.PathLen - e.NameOffset, 0, NULL, 0);
         else

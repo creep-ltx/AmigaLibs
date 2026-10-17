@@ -50,7 +50,11 @@ build/$(1)/%.o: src/%.c src/port.h src/base.h src/version.h include/libraries/fu
 	@mkdir -p build/$(1)
 	$$(CC) $$(WARN) $$(CPU_$(1)) $$(LIBFLAGS) -c $$< -o $$@
 
-build/$(1)/fuzzy.library: build/start.o $(OBJS:%=build/$(1)/%.o)
+build/$(1)/hot.o: src/hot.s
+	@mkdir -p build/$(1)
+	$$(CC) $$(CPU_$(1)) -c $$< -o $$@
+
+build/$(1)/fuzzy.library: build/start.o $(OBJS:%=build/$(1)/%.o) build/$(1)/hot.o
 	$$(CC) $$(CPU_$(1)) -noixemul -nostartfiles -nostdlib -s -Wl,-Map,build/$(1)/fuzzy.map -o $$@ $$^ $$(ARITH_$(1)) -lgcc
 	@! grep -E 'libnix|libstubs|libamiga' build/$(1)/fuzzy.map | grep -v -E '^LOAD |libnix13.a\(__u?(mul|div|mod)si[34].o\)' \
 	    || (echo "C library code got into $$@"; false)

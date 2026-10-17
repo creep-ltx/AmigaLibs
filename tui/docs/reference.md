@@ -624,7 +624,7 @@ TuiTitle(t, title)
 VOID TuiTitle(struct Tui *, CONST_STRPTR);
 ```
 
-Sets the title of the CTerm tab the program runs in. Does nothing in a plain console.
+Sets the title of the CTerm tab the program runs in. Does nothing in a plain console. The title is taken away again by TuiClose() and TuiSuspend() and put back by TuiResume() (0.4), so the tab does not go on showing it.
 
 **Inputs**
 

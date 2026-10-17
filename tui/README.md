@@ -113,7 +113,7 @@ for them. A real 68060 was not measured (FS-UAE has none set up). After adding a
 
 ## State
 
-**0.4b1, 2026-10-17:** `TuiOpenIO(in, out)`, for FuzzyFind's `fzf` in backquotes (offset 174, at the end). Tested in FS-UAE (3.2.1 and 2.05) through fzf; Sumi, Maki, Markdown, Ahiru and CUtils rebuilt. Not yet on the A1200 (it runs 0.3b1).
+**0.4b1, 2026-10-17:** `TuiOpenIO(in, out)`, for FuzzyFind's `fzf` in backquotes (offset 174, at the end). A title set with `TuiTitle` is taken away on `TuiClose` and `TuiSuspend` and put back on `TuiResume` (CTerm went on showing "fzf" after fzf ended; Ahiru, man, top and ctop had the same); seen in CTerm with fzf, suspend/resume not tried. Tested in FS-UAE (3.2.1 and 2.05) through fzf; Sumi, Maki, Markdown, Ahiru and CUtils rebuilt. Not yet on the A1200 (it runs 0.3b1).
 
 **On the A1200 since 2026-10-16 (the user's go):** `LIBS:tui.library` 0.3b1 (the 020 build, Emu68),
 with C:Maki 0.1b4, C:Markdown 0.1b3, C:Sumi 0.2b4 and Work:Utils/Ahiru/Ahiru 0.3b5; the old

@@ -186,16 +186,16 @@ static LONG wscore(const FuzzyPattern *p, const UBYTE *t, LONG s, LONG e, const 
 static int window(const UBYTE *fold, const struct Word *w, const UBYTE *t, LONG from, LONG to,
                   LONG *ps, LONG *pe)
 {
-    const UBYTE *q = t + from, *qe = t + to, *ws = w->s, *we = w->s + w->len, *start = NULL;
-    UBYTE want = *ws;
+    const UBYTE *q = t + from, *qe = t + to, *ws = w->s, *we = w->s + w->len, *start;
     LONG pi;
-    while (q < qe) {                    /* forwards: the letters in order */
-        if (fold[*q++] != want) continue;
-        if (!start) start = q - 1;
-        if (++ws == we) break;
-        want = *ws;
+    q = fz_scan(q, qe, fold, *ws);      /* forwards: the letters in order */
+    if (q == qe) return 0;
+    start = q++;
+    while (++ws < we) {
+        q = fz_scan(q, qe, fold, *ws);
+        if (q == qe) return 0;
+        q++;
     }
-    if (ws != we) return 0;
     *pe = q - t;
     pi = w->len - 1;                    /* backwards: the shortest window */
     while (--q >= start)
