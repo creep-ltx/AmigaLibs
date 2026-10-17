@@ -140,7 +140,7 @@ It is fzf's ranking (its "v1" way and its numbers), with its **path scheme** by 
    `Graphics/DPaint/DPaint` above `Docs/dpaint-notes/a.txt`.
 4. Ties (in `FuzzySearch`): the shorter path first, then the one that came first.
 
-`:` counts as a path separator, as on the Amiga. On the user's A1200's 21,028 paths the top five
+`:` counts as a path separator, as on the Amiga. On a 21,028-path test list from a real A1200 the top five
 for `dpaint`, `startup`, `ahiru`, `mod` and `readme` were the same as fzf 0.74's, in the same
 order (checked 2026-10-17).
 
@@ -225,13 +225,17 @@ then each entry:
 ```
 
 Paths are Latin-1, volume names not device names (`Work:` not `DH1:`). A reader refuses a format
-it does not know (`FERR_VERSION`). The user's A1200: 21,028 paths in 340 KB (966 KB as a plain
-list).
+it does not know (`FERR_VERSION`). A real A1200's index: 57,028 entries in 1.04 MB (a 21,028-path
+test list: 340 KB, against 966 KB as a plain list).
 
 ## Speed
 
-**Not measured on a real Amiga yet.** Measured in FS-UAE (2026-10-17) with the index in RAM:, so
-the processor's share only, one search of a real A1200's 21,028 paths took:
+On a real A1200 with a PiStorm (Emu68, which runs as a fast 68040; the files on an SD card, so
+not typical of an Amiga), measured 2026-10-17: `updatedb` indexed 57,028 files and drawers in
+5.3 s, reading the index took 0.14 s, and one search 0.14-0.30 s.
+
+**Not measured on a stock Amiga yet.** Measured in FS-UAE (2026-10-17) with the index in RAM:, so
+the processor's share only, one search of a 21,028-path test list took:
 
 | Machine (emulated) | One search |
 |---|---|

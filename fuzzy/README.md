@@ -74,7 +74,8 @@ in `src/lib.c` in the same order, new calls at the end; the first entry is ARexx
 
 - **On the PC:** the unit tests (matching, ranking, the index written and read back, a damaged
   index, 100,000 entries) under ASan and UBSan; the ranking set beside fzf 0.74's on a real
-  A1200's 21,028 paths (the same top five for `dpaint`, `startup`, `ahiru`, `mod`, `readme`).
+  A1200's paths (a 21,028-path test list; the same top five for `dpaint`, `startup`, `ahiru`, `mod`,
+  `readme`).
 - **In FS-UAE:** `fuzzytest` and `fuzzytest.rexx` on the A1200 test machine (68020, OS 3.2.1) and
   the A600 (68000, 2.05); FuzzyFind's commands on both. The guide's first program ran as written.
 - **Speed** (21,028 paths, one search; FS-UAE, the index in RAM:, the processor's share only, no
@@ -87,4 +88,5 @@ in `src/lib.c` in the same order, new calls at the end; the first entry is ARexx
   (`tests/prof.c`, `prof2.c`) showed the cost spread over many small steps per entry, and looking
   at every letter of every path once is itself about 7 s there. A real gain on a 68000 needs a
   different index layout (proposed, not started).
-- **Not yet:** the real A1200.
+- **On the real A1200** (PiStorm, Emu68, SD card: not typical): 57,028 entries, one search
+  0.14-0.30 s, reading the index 0.14 s; fuzzytest passed (2026-10-17).
