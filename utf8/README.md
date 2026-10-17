@@ -96,7 +96,10 @@ No FPU build: the library does no floating point.
   passed on the A1200 test machine (68EC020, OS 3.2.1, the 020 build), on the same machine as a
   68040 (the 020 and 060 builds) and as a 68060 (the 060 build), and on the A600 (68000,
   Workbench 2.05, the 000 build). The guide's first program ran as written.
-- **Not yet:** the real A1200; a real 68040 or 68060; Kickstart 1.3.
+- **On a real A1200** (PiStorm32-lite with Emu68, OS 3.2.3, the 020 build, 2026-10-17): the 178
+  checks, the ARexx test and the first program all passed. Speeds there: 12-57 MB/s for Swedish
+  and English text, 0.9-6 MB/s for Japanese and emoji.
+- **Not yet:** a real 68000, 68040 or 68060; Kickstart 1.3.
 
 **Next:** tui.library, CTerm, csh and the CUtils taking their UTF-8 work from here; Japanese and
 emoji text faster (see the guide's [Speed](docs/guide.md#speed)).

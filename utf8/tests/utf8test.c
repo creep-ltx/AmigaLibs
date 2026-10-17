@@ -45,7 +45,8 @@ static void speed(const char *what, const char *text, LONG len, int call)
         }
         n++;
     } while ((ticks = since(&t)) < 100);
-    printf("  %-36s %5ld KB/s\n", what, (long)(n * len * 50 / ticks / 1024));
+    /* (in steps that cannot overflow on a fast machine: Emu68 does millions) */
+    printf("  %-36s %5ld KB/s\n", what, (long)((n * (len >> 6)) / ticks * 50 / 16));
 }
 
 static char sv[4096], cjk[4096], plain[4096];

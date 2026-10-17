@@ -277,7 +277,8 @@ Measured with `tests/utf8test` (4 KB of text, each call for 2 seconds), FS-UAE A
 | Utf8Find (NOCASE) | 128 KB/s | 205 KB/s | 9 KB/s |
 
 A plain C loop that only adds up the bytes ran at 444 KB/s on the same machine. A 68000 (A600)
-is about four times slower, a 68040 about four times faster. Latin and Cyrillic text takes
+is about four times slower, a 68040 about four times faster, and an A1200 with Emu68 on a
+PiStorm about a hundred times faster (12-57 MB/s for Latin text). Latin and Cyrillic text takes
 quick paths; Chinese, Japanese, Korean and emoji go through the tables and are slower.
 
 ## Versions
