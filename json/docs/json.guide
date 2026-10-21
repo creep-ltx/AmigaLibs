@@ -1,0 +1,1585 @@
+@database json.guide
+@$VER: json.guide 0.1b1 (16.10.2026)
+@author Tobias Karlsson
+
+@node main "json.library"
+
+@{b}json.library programmer's guide@{ub}
+
+json.library reads, builds and writes @{b}JSON@{ub}, the text format web services
+and many settings files use. It works from C (and any language that can
+call a library) and from @{b}ARexx@{ub}.
+
+This guide explains how to use it. Every call is described in full in the
+@{"reference" link "reference"}. Complete working programs: tests/jsontest.c (C) and
+tests/jsontest.rexx (ARexx).
+
+@{b}The programmer's guide@{ub}
+
+  @{"What you need" link "g-what-you-need"}
+  @{"The first program" link "g-the-first-program"}
+  @{"How it works" link "g-how-it-works"}
+  @{"Reading" link "g-reading"}
+  @{"Paths" link "g-paths"}
+  @{"Values" link "g-values"}
+  @{"Numbers without floating point" link "g-numbers-without-floating-point"}
+  @{"Text: UTF-8 and Latin-1" link "g-text-utf-8-and-latin-1"}
+  @{"Building and writing" link "g-building-and-writing"}
+  @{"Settings files: relaxed reading" link "g-settings-files-relaxed-reading"}
+  @{"ARexx" link "g-arexx"}
+  @{"Versions" link "g-versions"}
+  @{"Rules and traps" link "g-rules-and-traps"}
+
+@{b}Reference@{ub}
+
+  @{"Every call" link "reference"}
+@endnode
+
+@node g-what-you-need "What you need"
+@next g-the-first-program
+
+@{b}What you need@{ub}
+
+  - AmigaOS 2.04 or newer, any 680x0.
+  - LIBS:json.library: the build for the processor (build/000, 020 or 060,
+    see the README). There is no FPU build, because the library does no
+    floating-point maths.
+  - The headers in include/: libraries/json.h (types and constants),
+    proto/json.h, inline/json.h (the calls, for gcc) and
+    clib/json_protos.h (the prototypes). json.sfd describes the calls and
+    their registers, for making headers for other languages (sfdc or
+    fd2pragma).
+  - Your program's stack: the library's deepest call uses under 1 KB.
+
+@endnode
+
+@node g-the-first-program "The first program"
+@next g-how-it-works
+@prev g-what-you-need
+
+@{b}The first program@{ub}
+
+Reading the weather from a JSON text:
+
+    #include <stdio.h>
+    #include <proto/exec.h>
+    #include <proto/json.h>
+
+    struct Library *JsonBase;
+
+    int main(void)
+    {
+        static const char text[] =
+            "{ \\"city\\": \\"G\\xc3\\xb6teborg\\", \\"temp\\": 8.25, \\"wind\\": [\\"SW\\", 7] }";
+        struct JsonError err;
+        JsonDoc *doc;
+        JsonNode *root;
+        char city[40];
+
+        if (!(JsonBase = OpenLibrary(JSONNAME, 0))) {
+            printf("needs json.library\\n");
+            return 20;
+        }
+        if (!(doc = JsonParse(text, -1, 0, &err))) {
+            printf("line %ld col %ld: %s\\n", (long)err.Line, (long)err.Col, err.Message);
+            CloseLibrary(JsonBase);
+            return 10;
+        }
+        root = JsonRoot(doc);
+        JsonLatin1(JsonGet(root, "city"), city, sizeof(city));          /* Amiga text */
+        printf("%s: %ld.%02ld degrees, wind %ld m/s\\n", city,
+               (long)JsonScaled(JsonGet(root, "temp"), 2, 0) / 100,       /* 825 */
+               (long)JsonScaled(JsonGet(root, "temp"), 2, 0) % 100,
+               (long)JsonInt(JsonFind(root, "wind[1]"), 0));             /* 7 */
+        JsonFree(doc);                                                   /* every node with it */
+        CloseLibrary(JsonBase);
+        return 0;
+    }
+
+It prints Göteborg: 8.25 degrees, wind 7 m/s. Build with bebbo's gcc:
+m68k-amigaos-gcc -Os -noixemul -Wno-pointer-sign -I<json>/include
+weather.c -o weather.
+
+@endnode
+
+@node g-how-it-works "How it works"
+@next g-reading
+@prev g-the-first-program
+
+@{b}How it works@{ub}
+
+@{b}A document holds a tree of nodes.@{ub} JsonParse (from text) or JsonLoad (from
+a file) returns a JsonDoc *. Inside it, every value is a JsonNode *: an
+object, an array, a string, a number, true/false (a bool) or null. Objects
+and arrays have members; an object's members have names. JsonRoot(doc) is
+the top value.
+
+@{b}The document owns everything.@{ub} Nodes are never freed one by one:
+JsonFree(doc) frees the whole tree at once. A node pointer is valid until
+its document is freed. Strings the library hands out (JsonString,
+JsonName, JsonNumText) live in the document too.
+
+@{b}NULL is always safe.@{ub} Every call accepts NULL for a node and answers
+"nothing" (JT_NONE, NULL, 0 or the default you give). So a chain like
+JsonInt(JsonGet(JsonGet(root, "a"), "b"), -1) needs no checks in between:
+if anything is missing, the answer is -1.
+
+@{b}Small machines first.@{ub} The library never calls itself recursively, so a
+deeply nested file cannot overflow the stack. It does no floating-point
+maths and no 32-bit multiply or divide in its loops (a 68000 has neither),
+and it gets memory in a few big blocks per document, not per node.
+
+@endnode
+
+@node g-reading "Reading"
+@next g-paths
+@prev g-how-it-works
+
+@{b}Reading@{ub}
+
+    JsonDoc *JsonParse(text, len, flags, &err);     /* len -1: up to the 0 */
+    JsonDoc *JsonLoad("PROGDIR:settings.json", flags, &err);
+
+Both return NULL on failure and fill in struct JsonError (pass NULL if you
+do not need it):
+
+  Message
+    what was wrong, in English: "expected , or }", "a string is not
+      closed", "text that is not UTF-8"...
+  Line, Col
+    where, from 1 (Col counts bytes)
+  Pos
+    the byte, from 0
+
+Without flags the text must be strict JSON (RFC 8259). The library passes
+all 283 must-accept and must-refuse cases of JSONTestSuite (https://github.com/nst/JSONTestSuite).
+
+@{b}Walking@{ub} a tree:
+
+  JsonType(n)
+    JT_OBJECT, JT_ARRAY, JT_STRING, JT_NUMBER, JT_BOOL, JT_NULL, or
+      JT_NONE for NULL
+  JsonGet(object, "name")
+    a member by name (if a name comes twice, the last one, as JavaScript
+      does)
+  JsonAt(array, i)
+    the i-th item, from 0; negative counts from the end (-1 is the last)
+  JsonFind(node, "a.b[2].c")
+    a node by path (below)
+  JsonCount(n)
+    how many members an object or array has
+  JsonFirst(n), JsonNext(n)
+    the members one by one
+  JsonParent(n)
+    the object or array a node is in
+  JsonName(n)
+    an object member's name
+
+Every member of an object, in order:
+
+    for (m = JsonFirst(obj); m; m = JsonNext(m))
+        printf("%s is of type %ld\\n", JsonName(m), (long)JsonType(m));
+
+JsonFirst/JsonNext is the fast way through a big array: JsonAt(array, i)
+walks from the start each time.
+
+@endnode
+
+@node g-paths "Paths"
+@next g-values
+@prev g-reading
+
+@{b}Paths@{ub}
+
+JsonFind(node, path) goes several steps at once:
+
+  weather.city
+    the member city of the member weather
+  days[0]
+    the first item of the array days
+  days[-1].temp
+    temp in the last item of days
+  ["a.b"]
+    a member whose name has dots or brackets in it (\\" and \\\\ inside)
+  (empty)
+    the node itself
+
+A path that does not lead anywhere gives NULL, never a crash.
+
+@endnode
+
+@node g-values "Values"
+@next g-numbers-without-floating-point
+@prev g-paths
+
+@{b}Values@{ub}
+
+  JsonString(n)
+    For: a string
+    Gives: the text, UTF-8, 0-terminated; NULL for anything else
+  JsonLength(n)
+    For: a string or number
+    Gives: its length in bytes (a string may hold a 0 byte, written
+      \\u0000)
+  JsonLatin1(n, buf, size)
+    For: a string or number
+    Gives: the text as Amiga text (below)
+  JsonInt(n, def)
+    For: a number
+    Gives: the nearest whole number (8.5 is 9, -8.5 is -9), kept within a
+      LONG
+  JsonScaled(n, places, def)
+    For: a number
+    Gives: a fixed-point number (below)
+  JsonNumText(n)
+    For: a number
+    Gives: its text exactly as written: "8.25", "1e-3"
+  JsonBool(n, def)
+    For: true or false
+    Gives: 1 or 0
+
+JsonInt and JsonScaled also take @{b}a string that is exactly a number@{ub}: some
+web services send "temp": "8.5". Anything else gives def, the default you
+pass, so you can tell "missing" from 0:
+
+    LONG port = JsonInt(JsonGet(cfg, "port"), 8080);     /* 8080 when it is not set */
+
+@endnode
+
+@node g-numbers-without-floating-point "Numbers without floating point"
+@next g-text-utf-8-and-latin-1
+@prev g-values
+
+@{b}Numbers without floating point@{ub}
+
+A plain 68000 has no FPU, so the library keeps numbers as their text and
+hands them out as whole numbers. For decimals, JsonScaled(n, places, def)
+gives the number times 10^places, rounded:
+
+  @{b}Number@{ub}  @{b}JsonScaled(n, 0, -)@{ub}  @{b}(n, 1, -)@{ub}  @{b}(n, 2, -)@{ub}
+  ------  -------------------  ---------  ---------
+  8.25    8                    83         825
+  -0.5    -1                   -5         -50
+  1e3     1000                 10000      100000
+
+That is how money, temperatures and percentages are usually handled on
+small machines anyway: cents, tenths of a degree. Values too big for a
+LONG stop at its largest or smallest (2147483647 / -2147483648). places is
+0 to 9.
+
+A program that does want floating point takes JsonNumText(n) and converts
+it with its own maths library (atof, mathieeedoubbas.library).
+
+@endnode
+
+@node g-text-utf-8-and-latin-1 "Text: UTF-8 and Latin-1"
+@next g-building-and-writing
+@prev g-numbers-without-floating-point
+
+@{b}Text: UTF-8 and Latin-1@{ub}
+
+JSON text is always UTF-8 (Unicode), and so is everything inside the
+library. Amiga programs mostly use Latin-1. The library converts at the
+edges:
+
+  - @{b}Reading:@{ub} JsonLatin1(n, buf, size) copies a string as Latin-1 into buf,
+    ended with a 0. Characters that Latin-1 does not have become the
+    nearest it has: L as L, EUR as E, curly quotes as ", dashes as -,
+    anything else as ?. It returns the full length, even if buf was too
+    small, so JsonLatin1(n, NULL, 0) asks how big a buffer you need.
+  - @{b}Building:@{ub} JsonNewString(doc, text, len, JSF_LATIN1) takes Amiga text.
+    Without the flag the text is taken as UTF-8; any byte that is not
+    valid UTF-8 is still taken as Latin-1, so the library never writes
+    broken JSON.
+  - @{b}Writing:@{ub} JWF_ASCII writes every character beyond ASCII as ö: pure
+    ASCII that any program and any 7-bit channel accepts.
+
+@endnode
+
+@node g-building-and-writing "Building and writing"
+@next g-settings-files-relaxed-reading
+@prev g-text-utf-8-and-latin-1
+
+@{b}Building and writing@{ub}
+
+    JsonDoc *doc = @{"JsonNewDoc()" link "JsonNewDoc"};
+    JsonNode *o = JsonNewObject(doc), *days = JsonNewArray(doc);
+
+    JsonSetRoot(doc, o);
+    JsonAdd(o, "city", JsonNewString(doc, "G\\xf6teborg", -1, JSF_LATIN1));
+    JsonAdd(o, "temp", JsonNewNumber(doc, "8.25"));
+    JsonAdd(o, "sunny", JsonNewBool(doc, TRUE));
+    JsonAdd(o, "days", days);
+    JsonAdd(days, NULL, JsonNewInt(doc, 1));            /* arrays: no name */
+
+    len = JsonWrite(o, buf, sizeof(buf), 0);            /* {"city":"Göteborg","temp":8.25,...} */
+    JsonWriteFH(o, fh, JWF_PRETTY);                     /* to a file, two spaces an indent */
+    JsonFree(doc);
+
+  - JsonNew... make a node in the document, not yet anywhere in the tree.
+    JsonAdd puts it into an object (with a name) or an array (name NULL).
+    Adding a name that is already there replaces the old member.
+  - A failed JsonNew... returns NULL and JsonAdd refuses NULL, so the
+    nested calls above need no checks: if memory ran out, that member is
+    just missing.
+  - JsonAdd refuses a node that is already in the tree, one from another
+    document, and a node added into itself.
+  - JsonRemove(n) takes a node out (it can be added again elsewhere);
+    JsonSetRoot sets the top.
+  - JsonNewNumber(doc, "3.14") takes the number's text and checks it is a
+    JSON number; JsonNewInt(doc, n) takes a LONG.
+  - JsonWrite works like snprintf: it returns the full length, writes at
+    most size - 1 bytes and a 0. JsonWrite(n, NULL, 0, flags) measures.
+    JsonWriteFH writes to an open file and ends with a newline; it returns
+    FALSE if writing failed.
+  - Any node can be written, not just the root: JsonWrite(JsonGet(root,
+    "days"), ...).
+
+@endnode
+
+@node g-settings-files-relaxed-reading "Settings files: relaxed reading"
+@next g-arexx
+@prev g-building-and-writing
+
+@{b}Settings files: relaxed reading@{ub}
+
+People who write settings by hand leave comments and trailing commas, and
+old files are in Latin-1. JPF_RELAXED accepts all three:
+
+    doc = JsonLoad("ENVARC:MyProgram.json", JPF_RELAXED, &err);
+
+    // MyProgram settings
+    {
+        "colours": ["black", "white",],    /* a comma at the end is fine */
+        "name": "Åsa"                      (in Latin-1: fine too)
+    }
+
+The flags one by one: JPF_COMMENTS (// and /* */), JPF_TRAILING (a comma
+before ] or }), JPF_LATIN1 (bytes that are not UTF-8 are Latin-1). Writing
+always produces strict JSON.
+
+@endnode
+
+@node g-arexx "ARexx"
+@next g-versions
+@prev g-settings-files-relaxed-reading
+
+@{b}ARexx@{ub}
+
+json.library is also an ARexx function library:
+
+    /* the weather */
+    CALL ADDLIB('json.library', 0, -30, 0)
+    j = JSONLOAD('RAM:weather.json')
+    IF j = '' THEN DO
+      SAY 'cannot read it:' JSONERROR()
+      EXIT 10
+    END
+    SAY JSONGET(j, 'city') 'has' JSONGET(j, 'temp') 'degrees'
+    DO i = 0 TO JSONCOUNT(j, 'days') - 1
+      SAY 'day' i':' JSONGET(j, 'days['i'].temp')
+    END
+    CALL JSONFREE(j)
+
+An ARexx script starts with a comment, and ADDLIB tells ARexx about the
+library once (it stays added until the next reboot; adding it again does
+no harm). Documents are @{b}handles@{ub}, text like JSON1. Paths are the same as in
+C. Text going in and coming out is Latin-1; the JSON text of JSONTEXT and
+JSONSAVE is UTF-8 (or ASCII with the ASCII option).
+
+  JSONPARSE(text, [options])
+    reads JSON text: a handle, or '' (then JSONERROR() says why). Options:
+      RELAXED
+  JSONLOAD(file, [options])
+    reads a file: a handle or ''. Options: RELAXED
+  JSONNEW([ARRAY])
+    a new, empty document (an object, or an array): a handle
+  JSONFREE(handle)
+    frees it
+  JSONGET(handle, path, [default])
+    a value as text: strings as they are, numbers as written, true/false
+      as 1/0, null as '', objects and arrays as JSON. Missing: the default
+      or ''
+  JSONTYPE(handle, path)
+    OBJECT, ARRAY, STRING, NUMBER, BOOL, NULL, or '' if missing
+  JSONCOUNT(handle, path)
+    how many members (0 if not an object or array)
+  JSONNAME(handle, path, n)
+    the name of an object's n-th member, from 0 ('' past the end)
+  JSONSET(handle, path, value, [type])
+    sets a value, making the objects and arrays on the way; [n] one past
+      the end adds to an array. Type: STRING, NUMBER, BOOL (1/0,
+      TRUE/FALSE, YES/NO, ON/OFF), NULL, OBJECT, ARRAY, JSON (the value is
+      JSON text). Without a type, a value that is a JSON number becomes a
+      number, anything else text (01234 stays text). 1, or 0 when it
+      cannot be done (JSONERROR() says why)
+  JSONREMOVE(handle, path)
+    removes a value: 1, or 0 if it was not there
+  JSONTEXT(handle, [path], [options])
+    the document (or the value at path) as JSON text. Options: PRETTY,
+      ASCII
+  JSONSAVE(handle, file, [options])
+    writes the document to a file: 1 or 0. Options: PRETTY, ASCII
+  JSONERROR()
+    why the last JSONPARSE, JSONLOAD, JSONSET, JSONSAVE, or a too-long
+      JSONGET/JSONTEXT failed, like 3:7 expected : after a name
+      (line:column)
+
+Building in ARexx:
+
+    /* building */
+    CALL ADDLIB('json.library', 0, -30, 0)
+    k = JSONNEW()
+    CALL JSONSET(k, 'city', 'Göteborg')
+    CALL JSONSET(k, 'temp', 8.5)
+    CALL JSONSET(k, 'days[0].temp', 7)
+    CALL JSONSET(k, 'days[1].temp', 9)
+    SAY JSONTEXT(k, '', 'ASCII')
+    /* {"city":"G\\u00f6teborg","temp":8.5,"days":[{"temp":7},{"temp":9}]} */
+    CALL JSONSAVE(k, 'RAM:out.json', 'PRETTY')
+    CALL JSONFREE(k)
+
+  - @{b}Free your handles.@{ub} They are shared by all scripts (a handle can be
+    passed to another script) and live until JSONFREE, or until the
+    library leaves memory.
+  - @{b}ARexx strings are at most 65535 bytes.@{ub} A bigger JSONTEXT or JSONGET
+    gives '' and JSONERROR() says so; save big documents with JSONSAVE.
+    Files of any size can be loaded.
+  - A wrong handle or a missing argument is ARexx error 17 or 18, which
+    stops the script; things that can simply fail (bad JSON, a path that
+    cannot be set, a file that cannot be opened) give '' or 0 and leave
+    the reason in JSONERROR().
+
+@endnode
+
+@node g-versions "Versions"
+@next g-rules-and-traps
+@prev g-arexx
+
+@{b}Versions@{ub}
+
+While json.library is young its version is @{b}0@{ub} and its @{b}revision@{ub} counts up
+(0.1, 0.2...). Open version 0 and check the revision before using newer
+calls:
+
+  @{b}Revision@{ub}  @{b}Added@{ub}
+  --------  ----------
+  0.1       everything
+
+From 1.0 on the version will count and OpenLibrary(JSONNAME, n) will do
+the check. Calls are never removed or moved, so a program built for an
+older revision keeps working with every newer one.
+
+@endnode
+
+@node g-rules-and-traps "Rules and traps"
+@prev g-versions
+
+@{b}Rules and traps@{ub}
+
+  - @{b}Free documents with@{ub} JsonFree@{b}.@{ub} Not nodes, not strings: the document
+    owns them.
+  - @{b}Never use a node after its document is freed@{ub}, and never mix nodes of
+    two documents: JsonAdd refuses them.
+  - @{b}Strings from the library are read-only@{ub} and UTF-8. Copy with JsonLatin1
+    for Amiga text.
+  - JsonString @{b}stops at a 0 byte@{ub} inside a string (\\u0000 in the JSON);
+    JsonLength tells the real length.
+  - @{b}Big arrays:@{ub} walk them with JsonFirst/JsonNext; JsonAt(a, i) in a loop
+    goes from the start every time.
+  - @{b}Documents are not shared between tasks@{ub} without your own locking.
+    Different documents in different tasks are fine: the library keeps
+    nothing per program.
+  - @{b}Duplicate names:@{ub} JsonGet gives the last one; JsonFirst/JsonNext see
+    them all.
+
+@endnode
+
+@node reference "json.library reference"
+
+@{b}Every call@{ub}
+
+  @{"JsonAdd" link "JsonAdd"}
+  @{"JsonAt" link "JsonAt"}
+  @{"JsonBool" link "JsonBool"}
+  @{"JsonCount" link "JsonCount"}
+  @{"JsonFind" link "JsonFind"}
+  @{"JsonFirst" link "JsonFirst"}
+  @{"JsonFree" link "JsonFree"}
+  @{"JsonGet" link "JsonGet"}
+  @{"JsonInt" link "JsonInt"}
+  @{"JsonLatin1" link "JsonLatin1"}
+  @{"JsonLength" link "JsonLength"}
+  @{"JsonLoad" link "JsonLoad"}
+  @{"JsonName" link "JsonName"}
+  @{"JsonNewArray" link "JsonNewArray"}
+  @{"JsonNewBool" link "JsonNewBool"}
+  @{"JsonNewDoc" link "JsonNewDoc"}
+  @{"JsonNewInt" link "JsonNewInt"}
+  @{"JsonNewNull" link "JsonNewNull"}
+  @{"JsonNewNumber" link "JsonNewNumber"}
+  @{"JsonNewObject" link "JsonNewObject"}
+  @{"JsonNewString" link "JsonNewString"}
+  @{"JsonNext" link "JsonNext"}
+  @{"JsonNumText" link "JsonNumText"}
+  @{"JsonParent" link "JsonParent"}
+  @{"JsonParse" link "JsonParse"}
+  @{"JsonRemove" link "JsonRemove"}
+  @{"JsonRoot" link "JsonRoot"}
+  @{"JsonScaled" link "JsonScaled"}
+  @{"JsonSetRoot" link "JsonSetRoot"}
+  @{"JsonString" link "JsonString"}
+  @{"JsonType" link "JsonType"}
+  @{"JsonWrite" link "JsonWrite"}
+  @{"JsonWriteFH" link "JsonWriteFH"}
+  @{"The ARexx entry" link "ref-the-arexx-entry"}
+@endnode
+
+@node JsonAdd "json.library/JsonAdd"
+@toc reference
+@next JsonAt
+
+@{b}json.library/JsonAdd@{ub}
+
+   @{b}NAME@{ub}
+        JsonAdd -- Put a node into an object or array (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        ok = JsonAdd(parent, name, node)
+        D0          A0      A1    A2
+
+        LONG JsonAdd(JsonNode *, CONST_STRPTR, JsonNode *);
+
+   @{b}FUNCTION@{ub}
+        Adds node as the last member of parent. In an object it needs a
+        name (UTF-8; a byte that is not UTF-8 is taken as Latin-1); a
+        member of that name already there is replaced. In an array the
+        name is ignored (pass NULL).
+
+   @{b}INPUTS@{ub}
+        parent - an object or array
+        name   - the member's name (objects), or NULL
+        node   - from JsonNew...(), or taken out with @{"JsonRemove()" link "JsonRemove"}
+
+   @{b}RESULT@{ub}
+        ok - TRUE, or FALSE: node NULL, already in a tree, from another
+             document, parent not an object or array (or no name for an
+             object), or node is parent or holds it
+
+        @{b}Notes:@{ub} Since a failed JsonNew...() is NULL and JsonAdd() refuses
+        NULL, JsonAdd(o, "x", JsonNewInt(doc, 5)) needs no checks.
+
+   @{b}SEE ALSO@{ub}
+        JsonRemove](#jsonremove), @{"JsonSetRoot" link "JsonSetRoot"}
+@endnode
+
+@node JsonAt "json.library/JsonAt"
+@toc reference
+@next JsonBool
+@prev JsonAdd
+
+@{b}json.library/JsonAt@{ub}
+
+   @{b}NAME@{ub}
+        JsonAt -- An array's item by number (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        node = JsonAt(array, index)
+        D0            A0     D0
+
+        JsonNode *JsonAt(JsonNode *, LONG);
+
+   @{b}FUNCTION@{ub}
+        Returns the item at index, counting from 0; a negative index
+        counts from the end (-1 is the last).
+
+   @{b}INPUTS@{ub}
+        array - an array
+        index - which item
+
+   @{b}RESULT@{ub}
+        node - the item, or NULL (not an array, or no such item)
+
+        @{b}Notes:@{ub} It walks from the start: in a loop over a big array use
+        @{"JsonFirst()" link "JsonFirst"} and @{"JsonNext()" link "JsonNext"}.
+
+   @{b}SEE ALSO@{ub}
+        JsonFirst](#jsonfirst), @{"JsonFind" link "JsonFind"}
+@endnode
+
+@node JsonBool "json.library/JsonBool"
+@toc reference
+@next JsonCount
+@prev JsonAt
+
+@{b}json.library/JsonBool@{ub}
+
+   @{b}NAME@{ub}
+        JsonBool -- true or false (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        value = JsonBool(node, def)
+        D0               A0    D0
+
+        LONG JsonBool(JsonNode *, LONG);
+
+   @{b}FUNCTION@{ub}
+        Returns 1 for true and 0 for false.
+
+   @{b}INPUTS@{ub}
+        node - a bool
+        def  - what to return for anything else
+
+   @{b}RESULT@{ub}
+        value - 1, 0, or def
+
+   @{b}SEE ALSO@{ub}
+        JsonNewBool](#jsonnewbool)
+@endnode
+
+@node JsonCount "json.library/JsonCount"
+@toc reference
+@next JsonFind
+@prev JsonBool
+
+@{b}json.library/JsonCount@{ub}
+
+   @{b}NAME@{ub}
+        JsonCount -- How many members (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        count = JsonCount(node)
+        D0                A0
+
+        LONG JsonCount(JsonNode *);
+
+   @{b}FUNCTION@{ub}
+        Returns how many members an object or array has.
+
+   @{b}INPUTS@{ub}
+        node - an object or array
+
+   @{b}RESULT@{ub}
+        count - the members; 0 for anything else
+
+   @{b}SEE ALSO@{ub}
+        JsonFirst](#jsonfirst)
+@endnode
+
+@node JsonFind "json.library/JsonFind"
+@toc reference
+@next JsonFirst
+@prev JsonCount
+
+@{b}json.library/JsonFind@{ub}
+
+   @{b}NAME@{ub}
+        JsonFind -- A node by path (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        node = JsonFind(start, path)
+        D0              A0     A1
+
+        JsonNode *JsonFind(JsonNode *, CONST_STRPTR);
+
+   @{b}FUNCTION@{ub}
+        Follows a path from start: names joined by dots, [n] for an
+        array's n-th item (from 0, negative from the end), ["name"] for a
+        name with dots or brackets (\\" and \\\\ inside). An empty path is
+        start itself.
+
+   @{b}INPUTS@{ub}
+        start - where the path begins (usually JsonRoot(doc))
+        path  - like "weather.days[0].temp" (UTF-8)
+
+   @{b}RESULT@{ub}
+        node - what the path leads to, or NULL
+
+   @{b}SEE ALSO@{ub}
+        JsonGet](#jsonget), @{"JsonAt" link "JsonAt"}
+@endnode
+
+@node JsonFirst "json.library/JsonFirst"
+@toc reference
+@next JsonFree
+@prev JsonFind
+
+@{b}json.library/JsonFirst@{ub}
+
+   @{b}NAME@{ub}
+        JsonFirst -- The first member (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        member = JsonFirst(node)
+        D0                A0
+
+        JsonNode *JsonFirst(JsonNode *);
+
+   @{b}FUNCTION@{ub}
+        Returns the first member of an object or array; @{"JsonNext()" link "JsonNext"} gives
+        the rest.
+
+   @{b}INPUTS@{ub}
+        node - an object or array
+
+   @{b}RESULT@{ub}
+        member - the first member, or NULL (empty, or not an object or array)
+
+        @{b}Notes:@{ub} for (m = JsonFirst(o); m; m = JsonNext(m)) ...
+
+   @{b}SEE ALSO@{ub}
+        JsonNext](#jsonnext), @{"JsonName" link "JsonName"}
+@endnode
+
+@node JsonFree "json.library/JsonFree"
+@toc reference
+@next JsonGet
+@prev JsonFirst
+
+@{b}json.library/JsonFree@{ub}
+
+   @{b}NAME@{ub}
+        JsonFree -- Free a document (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        JsonFree(doc)
+                 A0
+
+        VOID JsonFree(JsonDoc *);
+
+   @{b}FUNCTION@{ub}
+        Frees the document and every node and string in it. Nothing from
+        it may be used afterwards.
+
+   @{b}INPUTS@{ub}
+        doc - from @{"JsonParse()" link "JsonParse"}, @{"JsonLoad()" link "JsonLoad"} or @{"JsonNewDoc()" link "JsonNewDoc"}; NULL is safe
+
+   @{b}SEE ALSO@{ub}
+        JsonParse](#jsonparse), @{"JsonNewDoc" link "JsonNewDoc"}
+@endnode
+
+@node JsonGet "json.library/JsonGet"
+@toc reference
+@next JsonInt
+@prev JsonFree
+
+@{b}json.library/JsonGet@{ub}
+
+   @{b}NAME@{ub}
+        JsonGet -- An object's member by name (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        node = JsonGet(object, name)
+        D0             A0      A1
+
+        JsonNode *JsonGet(JsonNode *, CONST_STRPTR);
+
+   @{b}FUNCTION@{ub}
+        Returns the member called name. If the name is there more than
+        once, the last one (as JavaScript does).
+
+   @{b}INPUTS@{ub}
+        object - an object
+        name   - the name, UTF-8
+
+   @{b}RESULT@{ub}
+        node - the member, or NULL
+
+   @{b}SEE ALSO@{ub}
+        JsonFind](#jsonfind), @{"JsonAt" link "JsonAt"}
+@endnode
+
+@node JsonInt "json.library/JsonInt"
+@toc reference
+@next JsonLatin1
+@prev JsonGet
+
+@{b}json.library/JsonInt@{ub}
+
+   @{b}NAME@{ub}
+        JsonInt -- A number as a whole number (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        value = JsonInt(node, def)
+        D0              A0    D0
+
+        LONG JsonInt(JsonNode *, LONG);
+
+   @{b}FUNCTION@{ub}
+        Returns the number rounded to the nearest whole number (halves
+        away from zero: 8.5 is 9, -8.5 is -9), kept between -2147483648
+        and 2147483647. A string that is exactly a JSON number ("8.5")
+        counts as that number.
+
+   @{b}INPUTS@{ub}
+        node - a number
+        def  - what to return for anything else
+
+   @{b}RESULT@{ub}
+        value - the number, or def
+
+   @{b}SEE ALSO@{ub}
+        JsonScaled](#jsonscaled), @{"JsonNumText" link "JsonNumText"}
+@endnode
+
+@node JsonLatin1 "json.library/JsonLatin1"
+@toc reference
+@next JsonLength
+@prev JsonInt
+
+@{b}json.library/JsonLatin1@{ub}
+
+   @{b}NAME@{ub}
+        JsonLatin1 -- A string as Amiga text (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        length = JsonLatin1(node, buf, size)
+        D0                  A0    A1   D0
+
+        LONG JsonLatin1(JsonNode *, STRPTR, LONG);
+
+   @{b}FUNCTION@{ub}
+        Copies a string (or a number's text) into buf as Latin-1, ended
+        with a 0. Characters Latin-1 does not have become the nearest it
+        has (L as L, EUR as E, curly quotes as ", dashes as -), else ?.
+
+   @{b}INPUTS@{ub}
+        node - a string or number
+        buf  - where to put it; NULL only measures
+        size - buf's size, the 0 included
+
+   @{b}RESULT@{ub}
+        length - the whole text's length, even if buf was too small;
+                 -1 if node is not a string or number (buf gets "")
+
+        @{b}Notes:@{ub} JsonLatin1(n, NULL, 0) + 1 is the buffer size needed.
+
+   @{b}SEE ALSO@{ub}
+        JsonString](#jsonstring), @{"JsonNewString" link "JsonNewString"}
+@endnode
+
+@node JsonLength "json.library/JsonLength"
+@toc reference
+@next JsonLoad
+@prev JsonLatin1
+
+@{b}json.library/JsonLength@{ub}
+
+   @{b}NAME@{ub}
+        JsonLength -- A string's length (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        length = JsonLength(node)
+        D0                  A0
+
+        LONG JsonLength(JsonNode *);
+
+   @{b}FUNCTION@{ub}
+        Returns the length in bytes (UTF-8) of a string, or of a number's
+        text.
+
+   @{b}INPUTS@{ub}
+        node - a string or number
+
+   @{b}RESULT@{ub}
+        length - the bytes, or 0 for anything else
+
+        @{b}Notes:@{ub} A string can hold a 0 byte (\\u0000 in the JSON):
+        @{"JsonString()" link "JsonString"} stops there, JsonLength() does not.
+
+   @{b}SEE ALSO@{ub}
+        JsonString](#jsonstring)
+@endnode
+
+@node JsonLoad "json.library/JsonLoad"
+@toc reference
+@next JsonName
+@prev JsonLength
+
+@{b}json.library/JsonLoad@{ub}
+
+   @{b}NAME@{ub}
+        JsonLoad -- Read a JSON file (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        doc = JsonLoad(name, flags, err)
+        D0            A0    D0     A1
+
+        JsonDoc *JsonLoad(CONST_STRPTR, ULONG, struct JsonError *);
+
+   @{b}FUNCTION@{ub}
+        Reads a whole file (or pipe) and reads it as @{"JsonParse()" link "JsonParse"} does.
+
+   @{b}INPUTS@{ub}
+        name  - the file
+        flags - as @{"JsonParse()" link "JsonParse"}
+        err   - filled in when it fails; may be NULL
+
+   @{b}RESULT@{ub}
+        doc - the document, or NULL (Message: "cannot open the file",
+              "cannot read the file", "out of memory", or what was
+              wrong with the JSON)
+
+   @{b}SEE ALSO@{ub}
+        JsonParse](#jsonparse), @{"JsonWriteFH" link "JsonWriteFH"}
+@endnode
+
+@node JsonName "json.library/JsonName"
+@toc reference
+@next JsonNewArray
+@prev JsonLoad
+
+@{b}json.library/JsonName@{ub}
+
+   @{b}NAME@{ub}
+        JsonName -- A member's name (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        name = JsonName(node)
+        D0              A0
+
+        CONST_STRPTR JsonName(JsonNode *);
+
+   @{b}FUNCTION@{ub}
+        Returns the name of an object's member (UTF-8, read-only, valid
+        while the document is).
+
+   @{b}INPUTS@{ub}
+        node - a member of an object
+
+   @{b}RESULT@{ub}
+        name - the name, or NULL (not in an object)
+
+   @{b}SEE ALSO@{ub}
+        JsonFirst](#jsonfirst), @{"JsonLatin1" link "JsonLatin1"}
+@endnode
+
+@node JsonNewArray "json.library/JsonNewArray"
+@toc reference
+@next JsonNewBool
+@prev JsonName
+
+@{b}json.library/JsonNewArray@{ub}
+
+   @{b}NAME@{ub}
+        JsonNewArray -- A new, empty array (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        node = JsonNewArray(doc)
+        D0                  A0
+
+        JsonNode *JsonNewArray(JsonDoc *);
+
+   @{b}FUNCTION@{ub}
+        Makes an empty array in doc, not yet in the tree.
+
+   @{b}INPUTS@{ub}
+        doc - the document
+
+   @{b}RESULT@{ub}
+        node - the array, or NULL (out of memory)
+
+   @{b}SEE ALSO@{ub}
+        JsonAdd](#jsonadd)
+@endnode
+
+@node JsonNewBool "json.library/JsonNewBool"
+@toc reference
+@next JsonNewDoc
+@prev JsonNewArray
+
+@{b}json.library/JsonNewBool@{ub}
+
+   @{b}NAME@{ub}
+        JsonNewBool -- A new true or false (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        node = JsonNewBool(doc, value)
+        D0                 A0   D0
+
+        JsonNode *JsonNewBool(JsonDoc *, LONG);
+
+   @{b}FUNCTION@{ub}
+        Makes true (value not 0) or false.
+
+   @{b}INPUTS@{ub}
+        doc   - the document
+        value - TRUE or FALSE
+
+   @{b}RESULT@{ub}
+        node - the bool, or NULL
+
+   @{b}SEE ALSO@{ub}
+        JsonAdd](#jsonadd)
+@endnode
+
+@node JsonNewDoc "json.library/JsonNewDoc"
+@toc reference
+@next JsonNewInt
+@prev JsonNewBool
+
+@{b}json.library/JsonNewDoc@{ub}
+
+   @{b}NAME@{ub}
+        JsonNewDoc -- A new, empty document (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        doc = JsonNewDoc()
+        D0
+
+        JsonDoc *JsonNewDoc(void);
+
+   @{b}FUNCTION@{ub}
+        Makes an empty document to build in. Give it a top value with
+        @{"JsonSetRoot()" link "JsonSetRoot"}.
+
+   @{b}RESULT@{ub}
+        doc - the document, or NULL (out of memory)
+
+   @{b}SEE ALSO@{ub}
+        JsonSetRoot](#jsonsetroot), @{"JsonFree" link "JsonFree"}
+@endnode
+
+@node JsonNewInt "json.library/JsonNewInt"
+@toc reference
+@next JsonNewNull
+@prev JsonNewDoc
+
+@{b}json.library/JsonNewInt@{ub}
+
+   @{b}NAME@{ub}
+        JsonNewInt -- A new number from a LONG (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        node = JsonNewInt(doc, value)
+        D0                A0   D0
+
+        JsonNode *JsonNewInt(JsonDoc *, LONG);
+
+   @{b}FUNCTION@{ub}
+        Makes a whole number.
+
+   @{b}INPUTS@{ub}
+        doc   - the document
+        value - the number
+
+   @{b}RESULT@{ub}
+        node - the number, or NULL
+
+   @{b}SEE ALSO@{ub}
+        JsonNewNumber](#jsonnewnumber)
+@endnode
+
+@node JsonNewNull "json.library/JsonNewNull"
+@toc reference
+@next JsonNewNumber
+@prev JsonNewInt
+
+@{b}json.library/JsonNewNull@{ub}
+
+   @{b}NAME@{ub}
+        JsonNewNull -- A new null (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        node = JsonNewNull(doc)
+        D0                 A0
+
+        JsonNode *JsonNewNull(JsonDoc *);
+
+   @{b}FUNCTION@{ub}
+        Makes null.
+
+   @{b}INPUTS@{ub}
+        doc - the document
+
+   @{b}RESULT@{ub}
+        node - the null, or NULL (out of memory)
+
+   @{b}SEE ALSO@{ub}
+        JsonAdd](#jsonadd)
+@endnode
+
+@node JsonNewNumber "json.library/JsonNewNumber"
+@toc reference
+@next JsonNewObject
+@prev JsonNewNull
+
+@{b}json.library/JsonNewNumber@{ub}
+
+   @{b}NAME@{ub}
+        JsonNewNumber -- A new number from its text (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        node = JsonNewNumber(doc, text)
+        D0                   A0   A1
+
+        JsonNode *JsonNewNumber(JsonDoc *, CONST_STRPTR);
+
+   @{b}FUNCTION@{ub}
+        Makes a number written as text, kept exactly: "3.14", "-2e-3". For
+        decimals without floating point.
+
+   @{b}INPUTS@{ub}
+        doc  - the document
+        text - a JSON number
+
+   @{b}RESULT@{ub}
+        node - the number, or NULL (out of memory, or text is not a JSON
+               number: "3.", "01", "+1", "1,5" are not)
+
+   @{b}SEE ALSO@{ub}
+        JsonNewInt](#jsonnewint)
+@endnode
+
+@node JsonNewObject "json.library/JsonNewObject"
+@toc reference
+@next JsonNewString
+@prev JsonNewNumber
+
+@{b}json.library/JsonNewObject@{ub}
+
+   @{b}NAME@{ub}
+        JsonNewObject -- A new, empty object (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        node = JsonNewObject(doc)
+        D0                   A0
+
+        JsonNode *JsonNewObject(JsonDoc *);
+
+   @{b}FUNCTION@{ub}
+        Makes an empty object in doc, not yet in the tree.
+
+   @{b}INPUTS@{ub}
+        doc - the document
+
+   @{b}RESULT@{ub}
+        node - the object, or NULL (out of memory)
+
+   @{b}SEE ALSO@{ub}
+        JsonAdd](#jsonadd)
+@endnode
+
+@node JsonNewString "json.library/JsonNewString"
+@toc reference
+@next JsonNext
+@prev JsonNewObject
+
+@{b}json.library/JsonNewString@{ub}
+
+   @{b}NAME@{ub}
+        JsonNewString -- A new string (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        node = JsonNewString(doc, text, len, flags)
+        D0                   A0   A1    D0   D1
+
+        JsonNode *JsonNewString(JsonDoc *, CONST_STRPTR, LONG, ULONG);
+
+   @{b}FUNCTION@{ub}
+        Makes a string, copying the text.
+
+   @{b}INPUTS@{ub}
+        doc   - the document
+        text  - the text
+        len   - its length in bytes, or -1 for up to its 0
+        flags - JSF_LATIN1: the text is Amiga text. Without it the text is
+                UTF-8, and a byte that is not UTF-8 is still taken as Latin-1
+
+   @{b}RESULT@{ub}
+        node - the string, or NULL
+
+   @{b}SEE ALSO@{ub}
+        JsonLatin1](#jsonlatin1), @{"JsonAdd" link "JsonAdd"}
+@endnode
+
+@node JsonNext "json.library/JsonNext"
+@toc reference
+@next JsonNumText
+@prev JsonNewString
+
+@{b}json.library/JsonNext@{ub}
+
+   @{b}NAME@{ub}
+        JsonNext -- The next member (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        member = JsonNext(node)
+        D0                A0
+
+        JsonNode *JsonNext(JsonNode *);
+
+   @{b}FUNCTION@{ub}
+        Returns the member after node in its object or array.
+
+   @{b}INPUTS@{ub}
+        node - a member
+
+   @{b}RESULT@{ub}
+        member - the next one, or NULL at the end
+
+   @{b}SEE ALSO@{ub}
+        JsonFirst](#jsonfirst)
+@endnode
+
+@node JsonNumText "json.library/JsonNumText"
+@toc reference
+@next JsonParent
+@prev JsonNext
+
+@{b}json.library/JsonNumText@{ub}
+
+   @{b}NAME@{ub}
+        JsonNumText -- A number's text (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        text = JsonNumText(node)
+        D0                 A0
+
+        CONST_STRPTR JsonNumText(JsonNode *);
+
+   @{b}FUNCTION@{ub}
+        Returns a number exactly as it was written ("8.25", "1e-3"), for a
+        program with its own floating-point maths.
+
+   @{b}INPUTS@{ub}
+        node - a number
+
+   @{b}RESULT@{ub}
+        text - the text (read-only), or NULL for anything else
+
+   @{b}SEE ALSO@{ub}
+        JsonInt](#jsonint), @{"JsonScaled" link "JsonScaled"}
+@endnode
+
+@node JsonParent "json.library/JsonParent"
+@toc reference
+@next JsonParse
+@prev JsonNumText
+
+@{b}json.library/JsonParent@{ub}
+
+   @{b}NAME@{ub}
+        JsonParent -- The object or array a node is in (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        parent = JsonParent(node)
+        D0                  A0
+
+        JsonNode *JsonParent(JsonNode *);
+
+   @{b}FUNCTION@{ub}
+        Returns the object or array that holds node.
+
+   @{b}INPUTS@{ub}
+        node - any node
+
+   @{b}RESULT@{ub}
+        parent - the object or array, or NULL (the top, or not in a tree)
+
+   @{b}SEE ALSO@{ub}
+        JsonFirst](#jsonfirst)
+@endnode
+
+@node JsonParse "json.library/JsonParse"
+@toc reference
+@next JsonRemove
+@prev JsonParent
+
+@{b}json.library/JsonParse@{ub}
+
+   @{b}NAME@{ub}
+        JsonParse -- Read JSON text (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        doc = JsonParse(text, len, flags, err)
+        D0             A0    D0   D1     A1
+
+        JsonDoc *JsonParse(CONST_STRPTR, LONG, ULONG, struct JsonError *);
+
+   @{b}FUNCTION@{ub}
+        Reads JSON text into a new document. Without flags the text must
+        be strict JSON (RFC 8259); a UTF-8 byte order mark at the start is
+        allowed.
+
+   @{b}INPUTS@{ub}
+        text  - the JSON text
+        len   - its length, or -1 for up to its 0
+        flags - 0, or any of:
+                  JPF_COMMENTS  // and slash-star comments
+                  JPF_TRAILING  a comma before ] or }
+                  JPF_LATIN1    bytes that are not UTF-8 are Latin-1
+                  JPF_RELAXED   all three
+        err   - filled in when it fails; may be NULL
+
+   @{b}RESULT@{ub}
+        doc - the document, or NULL. err then says where and why:
+              Message (English), Line and Col (from 1), Pos (from 0)
+
+        @{b}Notes:@{ub} The text is copied: it may be freed straight after.
+
+   @{b}SEE ALSO@{ub}
+        JsonLoad](#jsonload), @{"JsonRoot" link "JsonRoot"}, @{"JsonFree" link "JsonFree"}
+@endnode
+
+@node JsonRemove "json.library/JsonRemove"
+@toc reference
+@next JsonRoot
+@prev JsonParse
+
+@{b}json.library/JsonRemove@{ub}
+
+   @{b}NAME@{ub}
+        JsonRemove -- Take a node out (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        JsonRemove(node)
+                   A0
+
+        VOID JsonRemove(JsonNode *);
+
+   @{b}FUNCTION@{ub}
+        Takes node out of its object or array (or off the top of its
+        document). It stays in the document and can be added again
+        elsewhere; its memory goes with @{"JsonFree()" link "JsonFree"}.
+
+   @{b}INPUTS@{ub}
+        node - any node; NULL is safe
+
+   @{b}SEE ALSO@{ub}
+        JsonAdd](#jsonadd)
+@endnode
+
+@node JsonRoot "json.library/JsonRoot"
+@toc reference
+@next JsonScaled
+@prev JsonRemove
+
+@{b}json.library/JsonRoot@{ub}
+
+   @{b}NAME@{ub}
+        JsonRoot -- A document's top value (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        node = JsonRoot(doc)
+        D0              A0
+
+        JsonNode *JsonRoot(JsonDoc *);
+
+   @{b}FUNCTION@{ub}
+        Returns the value at the top of the document.
+
+   @{b}INPUTS@{ub}
+        doc - the document
+
+   @{b}RESULT@{ub}
+        node - the top value, or NULL (none yet)
+
+   @{b}SEE ALSO@{ub}
+        JsonSetRoot](#jsonsetroot)
+@endnode
+
+@node JsonScaled "json.library/JsonScaled"
+@toc reference
+@next JsonSetRoot
+@prev JsonRoot
+
+@{b}json.library/JsonScaled@{ub}
+
+   @{b}NAME@{ub}
+        JsonScaled -- A number as fixed point (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        value = JsonScaled(node, places, def)
+        D0                 A0    D0      D1
+
+        LONG JsonScaled(JsonNode *, LONG, LONG);
+
+   @{b}FUNCTION@{ub}
+        Returns the number times 10 to the power places, rounded to the
+        nearest whole number (halves away from zero) and kept within a
+        LONG: 8.25 with 2 places is 825, with 1 place 83. A string that is
+        exactly a JSON number counts as that number.
+
+   @{b}INPUTS@{ub}
+        node   - a number
+        places - 0 to 9
+        def    - what to return for anything else (or places out of range)
+
+   @{b}RESULT@{ub}
+        value - the scaled number, or def
+
+   @{b}SEE ALSO@{ub}
+        JsonInt](#jsonint), @{"JsonNumText" link "JsonNumText"}
+@endnode
+
+@node JsonSetRoot "json.library/JsonSetRoot"
+@toc reference
+@next JsonString
+@prev JsonScaled
+
+@{b}json.library/JsonSetRoot@{ub}
+
+   @{b}NAME@{ub}
+        JsonSetRoot -- Set a document's top value (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        JsonSetRoot(doc, node)
+                    A0   A1
+
+        VOID JsonSetRoot(JsonDoc *, JsonNode *);
+
+   @{b}FUNCTION@{ub}
+        Makes node the document's top value. The old one (if any) stays in
+        the document, out of the tree.
+
+   @{b}INPUTS@{ub}
+        doc  - the document
+        node - a node of doc that is in no object or array; NULL empties it
+
+   @{b}SEE ALSO@{ub}
+        JsonRoot](#jsonroot), @{"JsonNewDoc" link "JsonNewDoc"}
+@endnode
+
+@node JsonString "json.library/JsonString"
+@toc reference
+@next JsonType
+@prev JsonSetRoot
+
+@{b}json.library/JsonString@{ub}
+
+   @{b}NAME@{ub}
+        JsonString -- A string's text (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        text = JsonString(node)
+        D0                A0
+
+        CONST_STRPTR JsonString(JsonNode *);
+
+   @{b}FUNCTION@{ub}
+        Returns a string's text, UTF-8, ended with a 0 (read-only, valid
+        while the document is).
+
+   @{b}INPUTS@{ub}
+        node - a string
+
+   @{b}RESULT@{ub}
+        text - the text, or NULL for anything else
+
+        @{b}Notes:@{ub} For Amiga text use @{"JsonLatin1()" link "JsonLatin1"}.
+
+   @{b}SEE ALSO@{ub}
+        JsonLatin1](#jsonlatin1), @{"JsonLength" link "JsonLength"}
+@endnode
+
+@node JsonType "json.library/JsonType"
+@toc reference
+@next JsonWrite
+@prev JsonString
+
+@{b}json.library/JsonType@{ub}
+
+   @{b}NAME@{ub}
+        JsonType -- What a node is (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        type = JsonType(node)
+        D0              A0
+
+        LONG JsonType(JsonNode *);
+
+   @{b}FUNCTION@{ub}
+        Returns the node's type.
+
+   @{b}INPUTS@{ub}
+        node - any node, or NULL
+
+   @{b}RESULT@{ub}
+        type - JT_OBJECT, JT_ARRAY, JT_STRING, JT_NUMBER, JT_BOOL, JT_NULL,
+               or JT_NONE for NULL
+@endnode
+
+@node JsonWrite "json.library/JsonWrite"
+@toc reference
+@next JsonWriteFH
+@prev JsonType
+
+@{b}json.library/JsonWrite@{ub}
+
+   @{b}NAME@{ub}
+        JsonWrite -- A node as JSON text (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        length = JsonWrite(node, buf, size, flags)
+        D0                 A0    A1   D0    D1
+
+        LONG JsonWrite(JsonNode *, STRPTR, LONG, ULONG);
+
+   @{b}FUNCTION@{ub}
+        Writes node (and everything in it) as JSON text into buf, as
+        snprintf does: at most size - 1 bytes and a 0.
+
+   @{b}INPUTS@{ub}
+        node  - any node
+        buf   - where to write; NULL only measures
+        size  - buf's size
+        flags - 0, or any of:
+                  JWF_PRETTY  one value a line, indented by two spaces
+                  JWF_ASCII   every character beyond ASCII as \\uXXXX
+
+   @{b}RESULT@{ub}
+        length - the whole text's length, even if buf was too small
+
+        @{b}Notes:@{ub} JsonWrite(n, NULL, 0, flags) + 1 is the buffer size needed.
+
+   @{b}SEE ALSO@{ub}
+        JsonWriteFH](#jsonwritefh)
+@endnode
+
+@node JsonWriteFH "json.library/JsonWriteFH"
+@toc reference
+@next ref-the-arexx-entry
+@prev JsonWrite
+
+@{b}json.library/JsonWriteFH@{ub}
+
+   @{b}NAME@{ub}
+        JsonWriteFH -- A node as JSON text, into a file (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        ok = JsonWriteFH(node, fh, flags)
+        D0              A0    D1  D0
+
+        LONG JsonWriteFH(JsonNode *, BPTR, ULONG);
+
+   @{b}FUNCTION@{ub}
+        Writes node as JSON text to an open file, ended with a newline.
+
+   @{b}INPUTS@{ub}
+        node  - any node
+        fh    - a file opened for writing (or Output())
+        flags - as @{"JsonWrite()" link "JsonWrite"}
+
+   @{b}RESULT@{ub}
+        ok - TRUE, or FALSE if writing failed
+
+   @{b}SEE ALSO@{ub}
+        JsonWrite](#jsonwrite), @{"JsonLoad" link "JsonLoad"}
+@endnode
+
+@node ref-the-arexx-entry "json.library/The ARexx entry"
+@toc reference
+@prev JsonWriteFH
+
+@{b}json.library/The ARexx entry@{ub}
+
+   @{b}NAME@{ub}
+        The ARexx entry -- The library's first entry (offset -30, before
+            JsonParse) is not a C call: it is the function ARexx calls for
+            ADDLIB('json.library', 0, -30, 0), with a RexxMsg in A0. It
+            returns an error code in D0 and the result string in A0 (and
+            A1). Do not call it from C. The ARexx functions are in the
+            guide.
+@endnode
+

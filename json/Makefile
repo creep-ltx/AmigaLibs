@@ -91,3 +91,10 @@ clean:
 	rm -rf build
 
 .PHONY: all headers clean check060 pctest fuzz
+
+# the Markdown docs as the Amiga reads them: docs/json.doc (Autodocs),
+# docs/json_guide.doc and docs/json.guide (AmigaGuide), Latin-1
+docs: docs/guide.md docs/reference.md ../tools/mkdocs.py
+	python3 -I ../tools/mkdocs.py . docs
+
+.PHONY: docs

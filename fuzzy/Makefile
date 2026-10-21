@@ -92,3 +92,10 @@ clean:
 	rm -rf build
 
 .PHONY: all headers clean check060 pctest rank
+
+# the Markdown docs as the Amiga reads them: docs/fuzzy.doc (Autodocs),
+# docs/fuzzy_guide.doc and docs/fuzzy.guide (AmigaGuide), Latin-1
+docs: docs/guide.md docs/reference.md ../tools/mkdocs.py
+	python3 -I ../tools/mkdocs.py . docs
+
+.PHONY: docs

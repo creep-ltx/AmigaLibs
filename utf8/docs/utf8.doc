@@ -1,0 +1,790 @@
+(Other scripts are spelt in Latin letters here, as the Amiga shows them;
+docs/guide.md and docs/reference.md have the original characters.)
+
+TABLE OF CONTENTS
+
+utf8.library/Utf8Case
+utf8.library/Utf8Charset
+utf8.library/Utf8CharsetName
+utf8.library/Utf8CharWidth
+utf8.library/Utf8Check
+utf8.library/Utf8Class
+utf8.library/Utf8Compare
+utf8.library/Utf8Decode
+utf8.library/Utf8Encode
+utf8.library/Utf8Find
+utf8.library/Utf8Fit
+utf8.library/Utf8FromCharset
+utf8.library/Utf8Length
+utf8.library/Utf8Lower
+utf8.library/Utf8Next
+utf8.library/Utf8NoAccent
+utf8.library/Utf8Normalize
+utf8.library/Utf8Prev
+utf8.library/Utf8ToCharset
+utf8.library/Utf8Upper
+utf8.library/Utf8Valid
+utf8.library/Utf8Width
+
+utf8.library/Utf8Case                                    utf8.library/Utf8Case
+
+   NAME
+        Utf8Case -- Text in upper or lower case (0.1).
+
+   SYNOPSIS
+        length = Utf8Case(text, len, buf, size, flags)
+        D0                A0    D0   A1   D1    D2
+
+        LONG Utf8Case(CONST_STRPTR, LONG, STRPTR, LONG, ULONG);
+
+   FUNCTION
+        Writes text into buf in upper case (U8F_UPPER) or lower case
+        (U8F_LOWER), every letter of every script that has case: Å, S, Zh,
+        ?. Without either flag it is a plain copy, which still turns
+        Latin-1 bytes into UTF-8.
+
+   INPUTS
+        text  - UTF-8 (a byte that is not UTF-8 is Latin-1)
+        len   - its length in bytes, or -1: up to its 0
+        buf   - where to write: UTF-8 and a 0; NULL to measure only
+        size  - buf's size in bytes
+        flags - U8F_UPPER or U8F_LOWER
+
+   RESULT
+        length - the bytes the whole result needs, without the 0
+
+        Notes: One letter becomes one letter: ß stays ß in upper case
+        (Unicode's SS is two letters), and the Turkish dotted and dotless
+        i follow the general rule. A result that does not fit stops at the
+        last whole character that does, with its 0 after it; a result
+        longer than size - 1 (length >= size) was cut.
+
+   SEE ALSO
+        Utf8Upper](#utf8upper), Utf8Lower, Utf8Compare
+
+
+utf8.library/Utf8Charset                              utf8.library/Utf8Charset
+
+   NAME
+        Utf8Charset -- A character set by its name (0.1).
+
+   SYNOPSIS
+        cs = Utf8Charset(name)
+        D0               A0
+
+        LONG Utf8Charset(CONST_STRPTR);
+
+   FUNCTION
+        Finds the U8CS_ number of a set from its name, as files, mail
+        headers, web pages and FTP servers give it. Case, '-', '_' and
+        spaces do not matter: "ISO-8859-1", "iso_8859_1" and "Latin1" are
+        the same.
+
+   INPUTS
+        name - the set's name
+
+   RESULT
+        cs - U8CS_..., or -1 (not a set the library knows)
+
+        Notes: The names known: ISO-8859-1 latin1 l1 amiga iso-ir-100
+        cp819; ISO-8859-2 latin2 l2 iso-ir-101; ISO-8859-15 latin9 l9
+        latin0; ISO-8859-5 cyrillic iso-ir-144; ISO-8859-7 greek
+        iso-ir-126 elot928; ISO-8859-9 latin5 l5 turkish iso-ir-148;
+        windows-1250 cp1250; windows-1251 cp1251; windows-1252 cp1252;
+        IBM437 cp437 437 pc8 dos; IBM850 cp850 850; IBM866 cp866 866;
+        KOI8-R koi8; macintosh macroman mac; US-ASCII ascii us
+        ansix3.41968 iso646us; UTF-8 utf8. Since UTF-8 has a number too
+        (U8CS_UTF8), Utf8FromCharset(..., Utf8Charset(name)) works for
+        every name, UTF-8 included.
+
+   SEE ALSO
+        Utf8CharsetName](#utf8charsetname), Utf8ToCharset, Utf8FromCharset
+
+
+utf8.library/Utf8CharsetName                      utf8.library/Utf8CharsetName
+
+   NAME
+        Utf8CharsetName -- A character set's name (0.1).
+
+   SYNOPSIS
+        name = Utf8CharsetName(cs)
+        D0                     D0
+
+        CONST_STRPTR Utf8CharsetName(LONG);
+
+   FUNCTION
+        Returns the usual name of set cs, as it is written in files and
+        mail ("ISO-8859-2", "windows-1252", "IBM437").
+
+   INPUTS
+        cs - U8CS_...
+
+   RESULT
+        name - the name (the library's own: do not change it), or NULL past
+               the last set
+
+        Notes: To list every set (for a menu): for (cs = 0; (name =
+        Utf8CharsetName(cs)); cs++) ...
+
+   SEE ALSO
+        Utf8Charset](#utf8charset)
+
+
+utf8.library/Utf8CharWidth                          utf8.library/Utf8CharWidth
+
+   NAME
+        Utf8CharWidth -- How many columns a character takes (0.1).
+
+   SYNOPSIS
+        columns = Utf8CharWidth(cp)
+        D0                      D0
+
+        LONG Utf8CharWidth(ULONG);
+
+   FUNCTION
+        Returns how many columns of a terminal (or of any fixed-width
+        text) the character takes, from Unicode 16's East Asian Width:
+        Chinese, Japanese and Korean characters and most emoji take two,
+        accents and other marks that join the character before take none.
+
+   INPUTS
+        cp - a code point
+
+   RESULT
+        columns - 2 wide, 1, 0 (joins the one before), or -1: a control
+                  (0-31, 127-159), a surrogate or not a code point
+
+        Notes: "Ambiguous" characters (Greek and Cyrillic in East Asian
+        fonts, some symbols) are 1, as in western terminals. For the width
+        of a whole text use Utf8Width(), which also knows that a flag's
+        two halves and an emoji sequence are one character.
+
+   SEE ALSO
+        Utf8Width](#utf8width), Utf8Fit, Utf8Class
+
+
+utf8.library/Utf8Check                                  utf8.library/Utf8Check
+
+   NAME
+        Utf8Check -- What kind of text it is (0.1).
+
+   SYNOPSIS
+        kind = Utf8Check(text, len)
+        D0              A0    D0
+
+        LONG Utf8Check(CONST_STRPTR, LONG);
+
+   FUNCTION
+        Tells plain ASCII, UTF-8 and 8-bit text (Latin-1 or another set)
+        apart, for a program that has to guess what a file holds.
+
+   INPUTS
+        text - the bytes
+        len  - their length, or -1: up to the 0
+
+   RESULT
+        kind - U8_ASCII:  only bytes below 128 (the same in every set)
+               U8_UTF8:   good UTF-8 with characters beyond ASCII
+               U8_LATIN1: has bytes that are not UTF-8, so 8-bit text
+
+        Notes: 8-bit text that happens to be good UTF-8 is rare in
+        practice: two or more accented letters in a row that form a UTF-8
+        sequence. When reading a file in pieces, a sequence cut at the end
+        of a piece is "not UTF-8": Utf8Valid() tells where it starts, so
+        the piece can end there.
+
+   SEE ALSO
+        Utf8Valid](#utf8valid), Utf8FromCharset
+
+
+utf8.library/Utf8Class                                  utf8.library/Utf8Class
+
+   NAME
+        Utf8Class -- What a character is (0.1).
+
+   SYNOPSIS
+        bits = Utf8Class(cp)
+        D0               D0
+
+        ULONG Utf8Class(ULONG);
+
+   FUNCTION
+        Tells what kind of character cp is: for word-wise cursor moves and
+        double-click selection (UC_WORD), checking input, or drawing. One
+        of the kind bits is set, and the others where they apply.
+
+   INPUTS
+        cp - a code point
+
+   RESULT
+        bits - one of
+                 UC_LETTER   a letter of any script (also Chinese characters)
+                 UC_DIGIT    0-9 in any script (Arabic, Devanagari, fullwidth...)
+                 UC_NUMBER   other numbers: ½ ² ?
+                 UC_PUNCT    punctuation and symbols, emoji too
+                 UC_SPACE    spaces (also tab and line ends, with UC_CONTROL)
+                 UC_MARK     accents and other marks that join the one before
+                 UC_CONTROL  controls, formats, private use, unassigned
+               and
+                 UC_UPPER    a letter with a lower case form
+                 UC_LOWER    a letter with an upper case form
+                 UC_WIDE     two columns
+               0 for a surrogate or past 0x10FFFF
+
+        Notes: UC_WORD is UC_LETTER | UC_DIGIT | UC_NUMBER | UC_MARK: the
+        characters that make up a word. Above U+FFFF the kind is a coarse
+        one (emoji are UC_PUNCT, the historic scripts UC_LETTER, their
+        marks UC_MARK).
+
+   SEE ALSO
+        Utf8CharWidth](#utf8charwidth), Utf8Upper
+
+
+utf8.library/Utf8Compare                              utf8.library/Utf8Compare
+
+   NAME
+        Utf8Compare -- Compare two texts (0.1).
+
+   SYNOPSIS
+        order = Utf8Compare(a, alen, b, blen, flags)
+        D0                  A0 D0    A1 D1    D2
+
+        LONG Utf8Compare(CONST_STRPTR, LONG, CONST_STRPTR, LONG, ULONG);
+
+   FUNCTION
+        Compares a and b character by character, by their Unicode numbers.
+        An accented letter written as one character (å) and as a letter
+        and an accent (a + ring above, as Macs write file names) are the
+        same, and so is a Latin-1 byte and the same letter in UTF-8.
+
+   INPUTS
+        a, b       - the texts (UTF-8; bytes that are not UTF-8 are Latin-1)
+        alen, blen - their lengths, or -1: up to the 0
+        flags      - 0, or:
+                     U8F_NOCASE:   upper and lower case the same (A = a,
+                                   S = s = s)
+                     U8F_NOACCENT: letters with and without accents the
+                                   same (é = e, Å = A, L = L)
+
+   RESULT
+        order - -1: a comes first, 0: the same, 1: b comes first
+
+        Notes: The order is Unicode's, not a language's alphabet: Swedish
+        Å Ä Ö come after Z only because their numbers are higher, and
+        German Ä comes after Z too (where a German dictionary puts it with
+        A). Enough for sorting file names; not a dictionary sort.
+
+   SEE ALSO
+        Utf8Find](#utf8find), Utf8Normalize
+
+
+utf8.library/Utf8Decode                                utf8.library/Utf8Decode
+
+   NAME
+        Utf8Decode -- Read one character (0.1).
+
+   SYNOPSIS
+        used = Utf8Decode(text, len, cp)
+        D0              A0    D0   A1
+
+        LONG Utf8Decode(CONST_STRPTR, LONG, ULONG *);
+
+   FUNCTION
+        Reads the character at text and gives its code point. The building
+        block for a program's own loops over UTF-8.
+
+   INPUTS
+        text - where the character starts
+        len  - the bytes there are, or -1: up to a 0 byte
+        cp   - where to put the code point (may be NULL)
+
+   RESULT
+        used - 1 to 4: the character's bytes, good UTF-8
+               -1: the byte is not UTF-8 (a stray byte, a sequence cut
+                   short, too long a way to write a small one, a
+                   surrogate); *cp is that byte as Latin-1, and the next
+                   character is one byte on
+                0: nothing left (len 0, or a 0 byte with len -1)
+
+        Notes: A loop over every code point:
+
+        while ((k = Utf8Decode(p, end - p, &c)) != 0) {
+            ...                     /* c: the character */
+            p += k < 0 ? 1 : k;
+        }
+
+        This gives code points. What a reader sees as one character can be
+        several (a letter and an accent, a flag): Utf8Next() steps by
+        those.
+
+   SEE ALSO
+        Utf8Encode](#utf8encode), Utf8Next, Utf8Valid
+
+
+utf8.library/Utf8Encode                                utf8.library/Utf8Encode
+
+   NAME
+        Utf8Encode -- Write one character (0.1).
+
+   SYNOPSIS
+        bytes = Utf8Encode(cp, buf)
+        D0               D0  A0
+
+        LONG Utf8Encode(ULONG, STRPTR);
+
+   FUNCTION
+        Writes code point cp as UTF-8.
+
+   INPUTS
+        cp  - a code point, 0 to 0x10FFFF
+        buf - room for 4 bytes (no 0 is written after them)
+
+   RESULT
+        bytes - 1 to 4, or 0: cp is a surrogate (0xD800-0xDFFF) or past
+                0x10FFFF, and nothing was written
+
+   SEE ALSO
+        Utf8Decode](#utf8decode)
+
+
+utf8.library/Utf8Find                                    utf8.library/Utf8Find
+
+   NAME
+        Utf8Find -- Find a text in a text (0.1).
+
+   SYNOPSIS
+        pos = Utf8Find(text, len, find, flen, flags, matchlen)
+        D0             A0    D0   A1    D1    D2     A2
+
+        LONG Utf8Find(CONST_STRPTR, LONG, CONST_STRPTR, LONG, ULONG, LONG *);
+
+   FUNCTION
+        Looks for find in text, as Utf8Compare() compares: accents written
+        either way are the same, and with the flags case and accents can
+        be left out. "gote" finds "Göteborg" with U8F_NOCASE |
+        U8F_NOACCENT.
+
+   INPUTS
+        text     - where to look (UTF-8; bytes that are not UTF-8 are Latin-1)
+        len      - its length, or -1: up to the 0
+        find     - what to look for
+        flen     - its length, or -1
+        flags    - 0, U8F_NOCASE, U8F_NOACCENT, or both
+        matchlen - where to put the length in bytes of what was found (may
+                   be NULL)
+
+   RESULT
+        pos - the byte where the first match starts, or -1 (not found);
+              0 with *matchlen 0 when find is empty
+
+        Notes: A match starts and ends on whole characters: "e" does not
+        find the e of an é written as e + accent unless U8F_NOACCENT is
+        given. The match can be longer or shorter in bytes than find ("e"
+        finds "é", two bytes, with U8F_NOACCENT): use *matchlen, not flen,
+        to mark or replace it. For the next match search again from pos +
+        *matchlen.
+
+   SEE ALSO
+        Utf8Compare](#utf8compare)
+
+
+utf8.library/Utf8Fit                                      utf8.library/Utf8Fit
+
+   NAME
+        Utf8Fit -- How much fits in some columns (0.1).
+
+   SYNOPSIS
+        bytes = Utf8Fit(text, len, cols, width)
+        D0            A0    D0   D1    A1
+
+        LONG Utf8Fit(CONST_STRPTR, LONG, LONG, LONG *);
+
+   FUNCTION
+        Finds how much of the start of text fits in cols columns: for
+        cutting a line at the edge of a window, or finding which character
+        a mouse click at a column lands on.
+
+   INPUTS
+        text  - UTF-8
+        len   - its length, or -1: up to the 0
+        cols  - the columns there are
+        width - where to put the columns the part that fits takes (may be
+                NULL); it can be one less than cols when a wide character
+                did not fit
+
+   RESULT
+        bytes - the length of the part that fits: never half a character,
+                and a character's accents always with it
+
+        Notes: Controls count 0 columns, as in Utf8Width(). To cut a line
+        with "..." at the end: Utf8Fit(text, len, cols - 3, &w), write
+        those bytes and the three dots.
+
+   SEE ALSO
+        Utf8Width](#utf8width), Utf8CharWidth
+
+
+utf8.library/Utf8FromCharset                      utf8.library/Utf8FromCharset
+
+   NAME
+        Utf8FromCharset -- 8-bit text to UTF-8 (0.1).
+
+   SYNOPSIS
+        length = Utf8FromCharset(text, len, buf, size, cs)
+        D0                       A0    D0   A1   D1    D2
+
+        LONG Utf8FromCharset(CONST_STRPTR, LONG, STRPTR, LONG, LONG);
+
+   FUNCTION
+        Turns text in an 8-bit set into UTF-8: Amiga text (U8CS_LATIN1)
+        for a web page or a mail, a PC's ANSI art (U8CS_CP437), a Polish
+        file (U8CS_LATIN2).
+
+   INPUTS
+        text - the 8-bit text
+        len  - its length, or -1: up to the 0
+        buf  - where to write: UTF-8 and a 0; NULL to measure only
+        size - buf's size in bytes
+        cs   - the set the text is in: U8CS_...
+
+   RESULT
+        length - the bytes the whole result needs, without the 0; -1 when cs
+                 is not a set
+
+        Notes: A byte the set has nothing for (0x81 in windows-1252, any
+        byte from 128 up in U8CS_ASCII) becomes U+FFFD, the replacement
+        character. With U8CS_UTF8 the text is copied, and bytes that are
+        not UTF-8 become their Latin-1 letters: good UTF-8 out whatever
+        came in. A result that does not fit stops at the last whole
+        character, with its 0.
+
+   SEE ALSO
+        Utf8ToCharset](#utf8tocharset), Utf8Charset, Utf8Check
+
+
+utf8.library/Utf8Length                                utf8.library/Utf8Length
+
+   NAME
+        Utf8Length -- How many characters (0.1).
+
+   SYNOPSIS
+        count = Utf8Length(text, len)
+        D0                A0    D0
+
+        LONG Utf8Length(CONST_STRPTR, LONG);
+
+   FUNCTION
+        Counts the characters as a reader sees them: a letter with its
+        accents is one (also when written as a letter and separate
+        accents), a flag (two regional letters) is one, an emoji family
+        joined by zero-width joiners is one, and CR LF is one.
+
+   INPUTS
+        text - UTF-8 (a byte that is not UTF-8 is one Latin-1 character)
+        len  - its length in bytes, or -1: up to its 0
+
+   RESULT
+        count - the characters
+
+        Notes: To count code points instead, loop with Utf8Decode(). The
+        rules are a short form of Unicode's grapheme clusters (UAX #29):
+        marks, joiners, variation selectors, skin tones, tags and Hangul
+        vowels join the character before; Indic conjuncts are not put
+        together.
+
+   SEE ALSO
+        Utf8Next](#utf8next), Utf8Width
+
+
+utf8.library/Utf8Lower                                  utf8.library/Utf8Lower
+
+   NAME
+        Utf8Lower -- A character in lower case (0.1).
+
+   SYNOPSIS
+        lower = Utf8Lower(cp)
+        D0                D0
+
+        ULONG Utf8Lower(ULONG);
+
+   FUNCTION
+        Returns the lower case form of a character: Å gives å, S gives s,
+        Zh gives zh.
+
+   INPUTS
+        cp - a code point
+
+   RESULT
+        lower - its lower case form, or cp itself (no case, or already lower)
+
+   SEE ALSO
+        Utf8Upper](#utf8upper), Utf8Case, Utf8Class
+
+
+utf8.library/Utf8Next                                    utf8.library/Utf8Next
+
+   NAME
+        Utf8Next -- To the next character (0.1).
+
+   SYNOPSIS
+        next = Utf8Next(text, len, pos)
+        D0              A0    D0   D1
+
+        LONG Utf8Next(CONST_STRPTR, LONG, LONG);
+
+   FUNCTION
+        Moves from the character at byte pos to the start of the next one,
+        as a reader counts them (see Utf8Length): what an editor's
+        cursor-right does.
+
+   INPUTS
+        text - UTF-8
+        len  - its length, or -1: up to the 0
+        pos  - where a character starts
+
+   RESULT
+        next - where the next starts; len at the end (and for pos >= len)
+
+        Notes: pos should be where a character starts (0, or what Utf8Next
+        or Utf8Prev gave). From the middle of one it moves a byte at a
+        time.
+
+   SEE ALSO
+        Utf8Prev](#utf8prev), Utf8Length
+
+
+utf8.library/Utf8NoAccent                            utf8.library/Utf8NoAccent
+
+   NAME
+        Utf8NoAccent -- A letter without its accents (0.1).
+
+   SYNOPSIS
+        plain = Utf8NoAccent(cp)
+        D0                   D0
+
+        ULONG Utf8NoAccent(ULONG);
+
+   FUNCTION
+        Returns the letter without accents: é gives e, Å gives A, e (two
+        accents) gives e, Y gives I, ga gives ka. Letters with a stroke that
+        Unicode does not take apart are covered too: Ø, L, D, H, T, i and
+        a few more give O, L, D, H, T, i.
+
+   INPUTS
+        cp - a code point
+
+   RESULT
+        plain - the letter without accents, or cp itself
+
+        Notes: Covers Latin, Greek, Cyrillic, Japanese kana and the signs
+        O, K, Å that are other letters in disguise. Letters that are not a
+        letter with an accent stay as they are: Æ, ß, Þ (Utf8ToCharset
+        writes AE, ss for the first two when a set lacks them).
+
+   SEE ALSO
+        Utf8Find](#utf8find), Utf8Compare, Utf8ToCharset
+
+
+utf8.library/Utf8Normalize                          utf8.library/Utf8Normalize
+
+   NAME
+        Utf8Normalize -- Accents together or apart (0.1).
+
+   SYNOPSIS
+        length = Utf8Normalize(text, len, buf, size, flags)
+        D0                     A0    D0   A1   D1    D2
+
+        LONG Utf8Normalize(CONST_STRPTR, LONG, STRPTR, LONG, ULONG);
+
+   FUNCTION
+        Writes text with every accent put on its letter (U8F_COMPOSE: å as
+        one character, as Amigas, Windows and the web write it) or taken
+        off as a separate mark (U8F_DECOMPOSE: a + ring above, as Macs may
+        write file names). Use it on names from a Mac (over NFS or SMB)
+        before showing or comparing them.
+
+   INPUTS
+        text  - UTF-8 (a byte that is not UTF-8 is Latin-1)
+        len   - its length, or -1: up to its 0
+        buf   - where to write: UTF-8 and a 0; NULL to measure only
+        size  - buf's size in bytes
+        flags - U8F_COMPOSE or U8F_DECOMPOSE (0: a plain copy that turns
+                Latin-1 bytes into UTF-8)
+
+   RESULT
+        length - the bytes the whole result needs, without the 0
+
+        Notes: For Latin, Greek, Cyrillic, kana and Hangul it gives what
+        Unicode's NFC and NFD give (checked against Python's for every
+        character there). Other scripts pass through unchanged, and marks
+        are not put in Unicode's order when several are on one letter in
+        an unusual order.
+
+   SEE ALSO
+        Utf8Compare](#utf8compare), Utf8ToCharset
+
+
+utf8.library/Utf8Prev                                    utf8.library/Utf8Prev
+
+   NAME
+        Utf8Prev -- To the character before (0.1).
+
+   SYNOPSIS
+        prev = Utf8Prev(text, len, pos)
+        D0              A0    D0   D1
+
+        LONG Utf8Prev(CONST_STRPTR, LONG, LONG);
+
+   FUNCTION
+        Moves from byte pos to the start of the character before it: what
+        an editor's cursor-left and backspace need. Accents, flags and
+        emoji sequences are passed over whole.
+
+   INPUTS
+        text - UTF-8
+        len  - its length, or -1: up to the 0
+        pos  - a position in the text
+
+   RESULT
+        prev - where the character before pos starts; 0 at the start. From
+               the middle of a character: where that one starts
+
+   SEE ALSO
+        Utf8Next](#utf8next)
+
+
+utf8.library/Utf8ToCharset                          utf8.library/Utf8ToCharset
+
+   NAME
+        Utf8ToCharset -- UTF-8 to an 8-bit set (0.1).
+
+   SYNOPSIS
+        length = Utf8ToCharset(text, len, buf, size, cs, flags)
+        D0                     A0    D0   A1   D1    D2  D3
+
+        LONG Utf8ToCharset(CONST_STRPTR, LONG, STRPTR, LONG, LONG, ULONG);
+
+   FUNCTION
+        Turns UTF-8 into an 8-bit set: Latin-1 for an Amiga screen, a
+        console window or a file other Amiga programs read; Latin-2 for a
+        Polish Amiga; CP437 for a PC BBS. Accents written as separate
+        marks are put on their letters first, so a Mac's "a + ring" still
+        becomes Latin-1's å.
+
+   INPUTS
+        text  - UTF-8 (a byte that is not UTF-8 is Latin-1)
+        len   - its length, or -1: up to its 0
+        buf   - where to write: the set's bytes and a 0; NULL to measure
+        size  - buf's size in bytes
+        cs    - the set: U8CS_...
+        flags - 0: the nearest for what the set lacks; U8F_STRICT: '?'
+
+   RESULT
+        length - the bytes the whole result needs, without the 0; -1 when cs
+                 is not a set
+
+        Notes: Without U8F_STRICT, what the set lacks becomes the nearest
+        it has: the letter without its accent (L gives L in Latin-1),
+        typographic quotes and dashes give " ' -, ... gives ..., EUR gives EUR
+        (in sets without EUR), TM gives TM, <= gives <=, box lines give - | +,
+        a full block #, a fullwidth A an A. Cyrillic, Greek, Japanese kana
+        and Korean are spelt in Latin letters (0.1b2): Privet gives
+        Privet, Omega Omega, konnichiha konnichiha, seoul seoul; small kana join
+        the kana before (kya kya). What has nothing near (Chinese
+        characters, kanji, emoji) gives '?'; a flag gives its two letters.
+        Invisible characters (zero-width joiners, variation selectors, a
+        byte order mark, skin tones) give nothing. One character can give
+        up to seven bytes (a Korean syllable), so the result can be longer
+        than the text. A result that does not fit stops at a whole
+        character, with its 0, and is always the start of the whole
+        result.
+
+   SEE ALSO
+        Utf8FromCharset](#utf8fromcharset), Utf8Charset, Utf8NoAccent
+
+
+utf8.library/Utf8Upper                                  utf8.library/Utf8Upper
+
+   NAME
+        Utf8Upper -- A character in upper case (0.1).
+
+   SYNOPSIS
+        upper = Utf8Upper(cp)
+        D0                D0
+
+        ULONG Utf8Upper(ULONG);
+
+   FUNCTION
+        Returns the upper case form of a character: å gives Å, s and s
+        give S, ÿ gives Y.
+
+   INPUTS
+        cp - a code point
+
+   RESULT
+        upper - its upper case form, or cp itself (no case, already upper, or
+                no single-letter upper case: ß)
+
+   SEE ALSO
+        Utf8Lower](#utf8lower), Utf8Case, Utf8Class
+
+
+utf8.library/Utf8Valid                                  utf8.library/Utf8Valid
+
+   NAME
+        Utf8Valid -- Where the text stops being UTF-8 (0.1).
+
+   SYNOPSIS
+        pos = Utf8Valid(text, len)
+        D0             A0    D0
+
+        LONG Utf8Valid(CONST_STRPTR, LONG);
+
+   FUNCTION
+        Checks that text is good UTF-8 (RFC 3629: no stray bytes, nothing
+        cut short, no needlessly long forms, no surrogates, nothing past
+        U+10FFFF).
+
+   INPUTS
+        text - the bytes
+        len  - their length, or -1: up to the 0
+
+   RESULT
+        pos - -1: all good; else the byte where the first fault starts
+
+   SEE ALSO
+        Utf8Check](#utf8check), Utf8Decode
+
+
+utf8.library/Utf8Width                                  utf8.library/Utf8Width
+
+   NAME
+        Utf8Width -- How many columns a text takes (0.1).
+
+   SYNOPSIS
+        columns = Utf8Width(text, len)
+        D0                 A0    D0
+
+        LONG Utf8Width(CONST_STRPTR, LONG);
+
+   FUNCTION
+        Returns how many columns of a terminal the text takes: ?? takes 4,
+        é written as e + accent takes 1, a flag takes 2. For laying out
+        columns, centring a title, or knowing whether a line fits.
+
+   INPUTS
+        text - UTF-8 (a byte that is not UTF-8 is a Latin-1 character, 1 column)
+        len  - its length, or -1: up to the 0
+
+   RESULT
+        columns - the columns
+
+        Notes: Controls (tab, line ends, escape) count 0: where a tab goes
+        is the program's business. A character takes its first code
+        point's width; a flag takes 2. Emoji with a variation selector
+        (U+FE0F) after a normally narrow symbol are counted 1, as most
+        terminals do.
+
+   SEE ALSO
+        Utf8Fit](#utf8fit), Utf8CharWidth
+

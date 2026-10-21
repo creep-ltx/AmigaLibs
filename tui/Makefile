@@ -86,10 +86,12 @@ build/core.o: src/core.c include/libraries/tui.h
 build/libtui.a: build/core.o
 	rm -f $@ && $(AMIGA)/bin/m68k-amigaos-ar rcs $@ $^
 
-# the old tui_* names (include/tui.h) over the library, or over libtui.a
+# the old tui_* names (include/tui.h) over the library, or over libtui.a.
+# libtuiglue.a is plain 68000 code: it only opens the library, and the
+# programs that link it (Sumi, Maki, Markdown) run on a 68000 too
 build/glue.o: src/glue.c include/tui.h include/libraries/tui.h
 	@mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) $(CPU_000) -c $< -o $@
 
 build/glue_static.o: src/glue.c include/tui.h include/libraries/tui.h
 	@mkdir -p build
@@ -124,3 +126,10 @@ clean:
 	rm -rf build
 
 .PHONY: all headers clean check060 cutilscheck
+
+# the Markdown docs as the Amiga reads them: docs/tui.doc (Autodocs),
+# docs/tui_guide.doc and docs/tui.guide (AmigaGuide), Latin-1
+docs: docs/guide.md docs/reference.md ../tools/mkdocs.py
+	python3 -I ../tools/mkdocs.py . docs
+
+.PHONY: docs

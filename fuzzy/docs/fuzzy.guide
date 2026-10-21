@@ -1,0 +1,935 @@
+@database fuzzy.guide
+@$VER: fuzzy.guide 0.1b1 (17.10.2026)
+@author Tobias Karlsson
+
+@node main "fuzzy.library"
+
+@{b}fuzzy.library programmer's guide@{ub}
+
+fuzzy.library does two things:
+
+It works from C (and any language that can call a library) and from @{b}ARexx@{ub}.
+
+This guide explains how to use it. Every call is described in full in the
+@{"reference" link "reference"}. Working programs: tests/fuzzytest.c (C), tests/fuzzytest.rexx
+(ARexx), and FuzzyFind's updatedb, locate and fzf.
+
+@{b}The programmer's guide@{ub}
+
+  @{"What you need" link "g-what-you-need"}
+  @{"The first program" link "g-the-first-program"}
+  @{"Matching" link "g-matching"}
+  @{"How the ranking works" link "g-how-the-ranking-works"}
+  @{"The index: reading and searching" link "g-the-index-reading-and-searching"}
+  @{"The index: writing" link "g-the-index-writing"}
+  @{"The index format" link "g-the-index-format"}
+  @{"Speed" link "g-speed"}
+  @{"ARexx" link "g-arexx"}
+  @{"Versions" link "g-versions"}
+  @{"Rules and traps" link "g-rules-and-traps"}
+
+@{b}Reference@{ub}
+
+  @{"Every call" link "reference"}
+@endnode
+
+@node g-what-you-need "What you need"
+@next g-the-first-program
+
+@{b}What you need@{ub}
+
+  - AmigaOS 2.04 or newer, any 680x0.
+  - LIBS:fuzzy.library: the build for the processor (build/000, 020 or
+    060, see the README). No floating point, so no FPU build.
+  - The headers in include/: libraries/fuzzy.h, proto/fuzzy.h,
+    inline/fuzzy.h (gcc) and clib/fuzzy_protos.h. fuzzy.sfd has the calls
+    and registers for other languages.
+  - For the index: one made by FuzzyFind's updatedb (or by your own
+    program, below).
+
+@endnode
+
+@node g-the-first-program "The first program"
+@next g-matching
+@prev g-what-you-need
+
+@{b}The first program@{ub}
+
+The five best matches for a word, from the index:
+
+    #include <stdio.h>
+    #include <proto/exec.h>
+    #include <proto/fuzzy.h>
+
+    struct Library *FuzzyBase;
+
+    int main(int argc, char **argv)
+    {
+        struct FuzzyIndex *index;
+        struct FuzzyResults *r;
+        LONG err, i;
+
+        if (argc < 2) {
+            printf("usage: best WORD\\n");
+            return 10;
+        }
+        if (!(FuzzyBase = OpenLibrary(FUZZYNAME, 0))) {
+            printf("needs fuzzy.library\\n");
+            return 20;
+        }
+        if (!(index = FuzzyOpenIndex(NULL, &err))) {        /* NULL: the usual place */
+            printf("no index: %s\\n", FuzzyErrorText(err));
+            CloseLibrary(FuzzyBase);
+            return 10;
+        }
+        if ((r = FuzzySearch(index, argv[1], 0, 5))) {     /* the 5 best */
+            printf("%ld of %ld entries match\\n", (long)r->Matched, (long)index->Count);
+            for (i = 0; i < r->Count; i++)
+                printf("%5ld  %s\\n", (long)r->Hits[i].Score, r->Hits[i].Path);
+            FuzzyFreeResults(r);
+        }
+        FuzzyCloseIndex(index);
+        CloseLibrary(FuzzyBase);
+        return 0;
+    }
+
+best multiview on a Workbench 3.2.1 disk prints (run 2026-10-17):
+
+    3 of 1575 entries match
+      250  Workbench:Utilities/MultiView
+      250  Workbench:Utilities/MultiView.info
+      250  Workbench:Locale/Help/english/Sys/Utilities/multiview.help
+
+Equal scores go shortest path first.
+
+Build with bebbo's gcc: m68k-amigaos-gcc -Os -noixemul -Wno-pointer-sign
+-I<fuzzy>/include best.c -o best.
+
+@endnode
+
+@node g-matching "Matching"
+@next g-how-the-ranking-works
+@prev g-the-first-program
+
+@{b}Matching@{ub}
+
+    FuzzyPattern *p = FuzzyPrepare("csrc", 0);              /* once */
+    LONG s = FuzzyScore(p, "config/source.c", -1, NULL, 0); /* for each text: 0 = no match */
+    FuzzyFreePattern(p);
+
+  - @{b}Prepare once, score many times.@{ub} FuzzyPrepare folds the pattern and
+    builds its tables; FuzzyScore is then cheap. A higher score is a
+    better match; 0 is none. Sort by it.
+  - @{b}The letters in order, with gaps:@{ub} csrc matches config/source.c, not
+    config/sauce.c.
+  - @{b}Several words@{ub} (a space between) must all match, in any order: mod
+    music finds Work:Music/mod.foo. An empty pattern matches everything
+    with score 1.
+  - @{b}Case and accents do not matter@{ub} by default: goteborg finds Göteborg,
+    WORK finds Work:.
+  - @{b}Where the letters were@{ub}, for highlighting: pass a UWORD array and its
+    size; it gets the byte position of each matched letter (in pattern
+    order, word after word).
+
+    UWORD pos[32];
+    if (FuzzyScore(p, text, -1, pos, 32))
+        ...  /* pos[0] is where the first letter of the pattern was found */
+
+  FPF_CASE
+    case matters
+  FPF_ACCENTS
+    accents matter (o no longer finds ö)
+  FPF_PLAIN
+    each word as one piece of text, no gaps (src no longer matches s/r/c)
+  FPF_TEXT
+    the texts are not paths (history, commands): no file-name bonus, and a
+      word after a space counts more
+
+Text is Latin-1, as Amiga file names are. Texts longer than 65535 bytes
+are scored on their first 65535.
+
+@endnode
+
+@node g-how-the-ranking-works "How the ranking works"
+@next g-the-index-reading-and-searching
+@prev g-matching
+
+@{b}How the ranking works@{ub}
+
+It is fzf's ranking (its "v1" way and its numbers), with its @{b}path scheme@{ub}
+by default:
+
+  1. Find the pattern's letters in order, left to right; then from the
+     last one backwards to the shortest window that holds them all.
+  2. Score that window: 16 a letter; more for a letter at the @{b}start of a@{ub}
+     @{b}word@{ub} (after / : _ - . space, a capital after a small letter, a digit
+     after a letter), more again for letters @{b}in a row@{ub}; a small penalty for
+     each gap. The first letter's bonus counts double.
+  3. @{b}The file name wins:@{ub} if the letters fit in the name (after the last /
+     or :) that window is tried too, and a window wholly in the name gets
+     a bonus. So dpaint puts Graphics/DPaint/DPaint above
+     Docs/dpaint-notes/a.txt.
+  4. Ties (in FuzzySearch): the shorter path first, then the one that came
+     first.
+
+: counts as a path separator, as on the Amiga. On a 21,028-path test list
+from a real A1200 the top five for dpaint, startup, ahiru, mod and readme
+were the same as fzf 0.74's, in the same order (checked 2026-10-17).
+
+@endnode
+
+@node g-the-index-reading-and-searching "The index: reading and searching"
+@next g-the-index-writing
+@prev g-how-the-ranking-works
+
+@{b}The index: reading and searching@{ub}
+
+    struct FuzzyIndex *x = FuzzyOpenIndex(NULL, &err);   /* NULL: @{"FuzzyIndexPath()" link "FuzzyIndexPath"}'s place */
+
+x->Count is how many entries it has, x->Created when it was made (seconds
+since 1978-01-01, as AmigaDOS counts), x->Volumes how many volumes it
+covers (FuzzyVolume(x, n, &date) gives each name).
+
+@{b}Every entry, in order:@{ub}
+
+    struct FuzzyEntry e;
+    while (FuzzyNextEntry(x, &e))
+        printf("%s %s %lu\\n", e.Type == FET_DRAWER ? "D" : "F", e.Path, e.Size);
+
+  Path, PathLen
+    "Work:Music/mod.foo", valid until the next FuzzyNextEntry
+  NameOffset
+    where the name starts in Path
+  Type
+    FET_FILE, FET_DRAWER, FET_LINK (a soft link, never followed)
+  Size
+    bytes (0 for a drawer)
+  Date
+    seconds since 1978-01-01
+  Prot
+    the protection bits (hsparwed)
+
+FuzzyRewind(x) starts again from the first.
+
+@{b}The best matches:@{ub} FuzzySearch(x, pattern, flags, max) returns the max
+best, best first, in a struct FuzzyResults (Count hits in Hits[], and
+Matched: how many matched in all). Each hit has the entry's fields and its
+Score; the paths are copies, valid until FuzzyFreeResults. Flags: the FPF_
+ones, and:
+
+  @{b}Flag@{ub}         @{b}Means@{ub}
+  -----------  ---------------------------------------------
+  FSF_FILES    only files
+  FSF_DRAWERS  only drawers
+  FSF_NAME     match only the name, not the drawers above it
+
+@{b}Where the index is:@{ub} FuzzyIndexPath(buf, size) gives the place: the ENV:
+setting FuzzyFind/Index, else S:FuzzyFind.index (not ENVARC:, which is
+copied to RAM at every boot).
+
+@endnode
+
+@node g-the-index-writing "The index: writing"
+@next g-the-index-format
+@prev g-the-index-reading-and-searching
+
+@{b}The index: writing@{ub}
+
+FuzzyFind's updatedb builds the index of the disks. A program can write
+one of its own (a catalogue of a CD, of an archive, of the drawers it has
+visited) the same way:
+
+    FuzzyWriter *w = FuzzyNewIndex("RAM:my.index", &err);   /* NULL name: the usual place */
+    FuzzyAddVolume(w, "Work", volumedate);                   /* all volumes first */
+    ...
+    e.Path = "Work:Music/mod.foo"; e.PathLen = -1; e.Type = FET_FILE; ...
+    FuzzyAddEntry(w, &e);                                    /* each file and drawer */
+    ...
+    err = FuzzyEndIndex(w, TRUE);                            /* TRUE: keep it; FALSE: throw it away */
+
+  - The index is written to NAME.new and renamed over NAME by
+    FuzzyEndIndex(w, TRUE), so a program reading the old one never sees
+    half a new one.
+  - @{b}Add a drawer's entries, then walk into its drawers@{ub} (as updatedb does):
+    neighbours then share most of their path, which is what keeps the
+    index small.
+  - Paths up to 1024 bytes; a longer one is refused (FuzzyAddEntry returns
+    FALSE) and the rest goes on.
+
+@endnode
+
+@node g-the-index-format "The index format"
+@next g-speed
+@prev g-the-index-writing
+
+@{b}The index format@{ub}
+
+Format 1, all numbers big-endian; "v" is a variable-length number: 7 bits
+a byte, low bits first, the top bit set on every byte but the last.
+
+    "FFIX"   UWORD 1 (the format)   UWORD 0 (flags)
+    ULONG created (seconds since 1978-01-01)   ULONG entries
+    UWORD volumes, then for each: UBYTE length, the name, ULONG the volume's date
+    then each entry:
+      v shared   bytes the path shares with the path before
+      v rest     then that many bytes: the path is the previous one's first "shared" bytes + these
+      UBYTE type (FET_)   UBYTE protection   v size   v date
+
+Paths are Latin-1, volume names not device names (Work: not DH1:). A
+reader refuses a format it does not know (FERR_VERSION). A real A1200's
+index: 57,028 entries in 1.04 MB (a 21,028-path test list: 340 KB, against
+966 KB as a plain list).
+
+@endnode
+
+@node g-speed "Speed"
+@next g-arexx
+@prev g-the-index-format
+
+@{b}Speed@{ub}
+
+On a real A1200 with a PiStorm (Emu68, which runs as a fast 68040; the
+files on an SD card, so not typical of an Amiga), measured 2026-10-17:
+updatedb indexed 57,028 files and drawers in 5.3 s, reading the index took
+0.14 s, and one search 0.14-0.30 s.
+
+@{b}Not measured on a stock Amiga yet.@{ub} Measured in FS-UAE (2026-10-17) with
+the index in RAM:, so the processor's share only, one search of a
+21,028-path test list took:
+
+  @{b}Machine (emulated)@{ub}                     @{b}One search@{ub}
+  -------------------------------------  ----------
+  68000, 7 MHz, chip memory only (A600)  14-28 s
+  68020, 14 MHz, fast memory (A1200)     3-6 s
+
+A search reads every entry, so it grows with the size of the index, and on
+a real machine reading the index from its drive comes on top (that depends
+on the drive: not measured). Two things help:
+
+  - @{b}A letter fingerprint:@{ub} while the entries are read, the library notes
+    which letters each path has (32 bits). A path missing one of the
+    pattern's letters is skipped without being scored: goteborg took half
+    the time of dpaint.
+  - @{b}Narrowing:@{ub} a program that keeps the matches (as fzf does) only needs
+    to look again at them when a letter is added; the first letter is the
+    slow one.
+
+@endnode
+
+@node g-arexx "ARexx"
+@next g-versions
+@prev g-speed
+
+@{b}ARexx@{ub}
+
+    CALL ADDLIB('fuzzy.library', 0, -30, 0)
+    SAY FUZZYSCORE('csrc', 'config/source.c')     /* a number: 0 = no match */
+    SAY FUZZYLOCATE('dpaint', 5)                  /* the 5 best paths of the index, one a line */
+
+  FUZZYSCORE(pattern, text, [options])
+    the score: higher is better, 0 no match
+  FUZZYLOCATE(pattern, [max], [options])
+    the best max paths of the index (20 if not given), one a line ('0a'x
+      between); '' if none, or if there is no index (FUZZYERROR() says)
+  FUZZYERROR()
+    why the last FUZZYLOCATE gave nothing
+
+Options, any of, in one string: PLAIN CASE ACCENTS TEXT, and for
+FUZZYLOCATE also FILES DRAWERS NAME. A line of results longer than an
+ARexx string (65535 bytes) gives ''; ask for fewer.
+
+@endnode
+
+@node g-versions "Versions"
+@next g-rules-and-traps
+@prev g-arexx
+
+@{b}Versions@{ub}
+
+While fuzzy.library is young its version is @{b}0@{ub} and its @{b}revision@{ub} counts up
+(0.1, 0.2...). Open version 0 and check the revision before using newer
+calls:
+
+  @{b}Revision@{ub}  @{b}Added@{ub}
+  --------  ----------
+  0.1       everything
+
+Calls are never removed or moved. The index format has its own number (1),
+checked by the reader.
+
+@endnode
+
+@node g-rules-and-traps "Rules and traps"
+@prev g-versions
+
+@{b}Rules and traps@{ub}
+
+  - @{b}Free what you get:@{ub} FuzzyFreePattern, FuzzyCloseIndex,
+    FuzzyFreeResults, FuzzyEndIndex (always, even to throw an index away).
+  - FuzzyNextEntry@{b}'s@{ub} Path @{b}is overwritten by the next call:@{ub} copy it to keep
+    it. FuzzySearch's hits are copies, safe until FuzzyFreeResults.
+  - @{b}One index handle per task.@{ub} Several tasks may open the same index file,
+    each with its own FuzzyOpenIndex.
+  - @{b}The index is a snapshot:@{ub} files made after updatedb ran are not in it.
+    Check a path still exists before acting on it.
+  - FuzzySearch @{b}goes through the whole index@{ub} each time: in an interactive
+    program keep the matches and narrow them as the user types (see
+    FuzzyFind's fzf).
+
+@endnode
+
+@node reference "fuzzy.library reference"
+
+@{b}Every call@{ub}
+
+  @{"FuzzyAddEntry" link "FuzzyAddEntry"}
+  @{"FuzzyAddVolume" link "FuzzyAddVolume"}
+  @{"FuzzyCloseIndex" link "FuzzyCloseIndex"}
+  @{"FuzzyEndIndex" link "FuzzyEndIndex"}
+  @{"FuzzyErrorText" link "FuzzyErrorText"}
+  @{"FuzzyFreePattern" link "FuzzyFreePattern"}
+  @{"FuzzyFreeResults" link "FuzzyFreeResults"}
+  @{"FuzzyIndexPath" link "FuzzyIndexPath"}
+  @{"FuzzyNewIndex" link "FuzzyNewIndex"}
+  @{"FuzzyNextEntry" link "FuzzyNextEntry"}
+  @{"FuzzyOpenIndex" link "FuzzyOpenIndex"}
+  @{"FuzzyPrepare" link "FuzzyPrepare"}
+  @{"FuzzyRewind" link "FuzzyRewind"}
+  @{"FuzzyScore" link "FuzzyScore"}
+  @{"FuzzySearch" link "FuzzySearch"}
+  @{"FuzzyVolume" link "FuzzyVolume"}
+  @{"The ARexx entry" link "ref-the-arexx-entry"}
+@endnode
+
+@node FuzzyAddEntry "fuzzy.library/FuzzyAddEntry"
+@toc reference
+@next FuzzyAddVolume
+
+@{b}fuzzy.library/FuzzyAddEntry@{ub}
+
+   @{b}NAME@{ub}
+        FuzzyAddEntry -- Add a file or drawer to an index being written
+            (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        ok = FuzzyAddEntry(writer, entry)
+        D0                A0      A1
+
+        LONG FuzzyAddEntry(FuzzyWriter *, struct FuzzyEntry *);
+
+   @{b}FUNCTION@{ub}
+        Writes one entry: Path (PathLen bytes, or -1 for up to its 0),
+        Type, Prot, Size and Date. NameOffset is not used (readers work it
+        out). Add a drawer's entries, then walk into its drawers:
+        neighbours sharing their path keep the index small.
+
+   @{b}INPUTS@{ub}
+        writer - from @{"FuzzyNewIndex()" link "FuzzyNewIndex"}
+        entry  - the entry
+
+   @{b}RESULT@{ub}
+        ok - TRUE, or FALSE (the path is over 1024 bytes, or writing failed)
+
+   @{b}SEE ALSO@{ub}
+        FuzzyNewIndex](#fuzzynewindex), @{"FuzzyEndIndex" link "FuzzyEndIndex"}
+@endnode
+
+@node FuzzyAddVolume "fuzzy.library/FuzzyAddVolume"
+@toc reference
+@next FuzzyCloseIndex
+@prev FuzzyAddEntry
+
+@{b}fuzzy.library/FuzzyAddVolume@{ub}
+
+   @{b}NAME@{ub}
+        FuzzyAddVolume -- Name a volume an index covers (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        error = FuzzyAddVolume(writer, name, date)
+        D0                     A0      A1    D0
+
+        LONG FuzzyAddVolume(FuzzyWriter *, CONST_STRPTR, ULONG);
+
+   @{b}FUNCTION@{ub}
+        Records a volume (its name without the colon, and its date) in the
+        index's header, so a reader can tell which disks it covers. All
+        volumes must come before the first entry.
+
+   @{b}INPUTS@{ub}
+        writer - from @{"FuzzyNewIndex()" link "FuzzyNewIndex"}
+        name   - "Work" (up to 255 bytes)
+        date   - the volume's date, seconds since 1978-01-01 (0 if unknown)
+
+   @{b}RESULT@{ub}
+        error - FERR_OK, or FERR_ORDER (an entry came already),
+                FERR_NOMEM (over 64 volumes)
+
+   @{b}SEE ALSO@{ub}
+        FuzzyVolume](#fuzzyvolume)
+@endnode
+
+@node FuzzyCloseIndex "fuzzy.library/FuzzyCloseIndex"
+@toc reference
+@next FuzzyEndIndex
+@prev FuzzyAddVolume
+
+@{b}fuzzy.library/FuzzyCloseIndex@{ub}
+
+   @{b}NAME@{ub}
+        FuzzyCloseIndex -- Close an index (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        FuzzyCloseIndex(index)
+                        A0
+
+        VOID FuzzyCloseIndex(struct FuzzyIndex *);
+
+   @{b}FUNCTION@{ub}
+        Closes the file and frees the handle. Hits from @{"FuzzySearch()" link "FuzzySearch"} stay
+        valid (they are copies).
+
+   @{b}INPUTS@{ub}
+        index - from @{"FuzzyOpenIndex()" link "FuzzyOpenIndex"}; NULL is safe
+
+   @{b}SEE ALSO@{ub}
+        FuzzyOpenIndex](#fuzzyopenindex)
+@endnode
+
+@node FuzzyEndIndex "fuzzy.library/FuzzyEndIndex"
+@toc reference
+@next FuzzyErrorText
+@prev FuzzyCloseIndex
+
+@{b}fuzzy.library/FuzzyEndIndex@{ub}
+
+   @{b}NAME@{ub}
+        FuzzyEndIndex -- Finish (or throw away) an index being written
+            (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        error = FuzzyEndIndex(writer, keep)
+        D0                    A0      D0
+
+        LONG FuzzyEndIndex(FuzzyWriter *, LONG);
+
+   @{b}FUNCTION@{ub}
+        keep TRUE: writes the entry count into the header, closes
+        NAME.new, deletes the old NAME and renames NAME.new to NAME. keep
+        FALSE: closes and deletes NAME.new, the old index stays. The
+        writer is freed either way.
+
+   @{b}INPUTS@{ub}
+        writer - from @{"FuzzyNewIndex()" link "FuzzyNewIndex"}
+        keep   - TRUE to keep it
+
+   @{b}RESULT@{ub}
+        error - FERR_OK, or FERR_IO (writing or renaming failed: NAME.new is
+                deleted, the old index stays)
+
+        @{b}Notes:@{ub} Always call it, also to give up: it frees the writer.
+
+   @{b}SEE ALSO@{ub}
+        FuzzyNewIndex](#fuzzynewindex)
+@endnode
+
+@node FuzzyErrorText "fuzzy.library/FuzzyErrorText"
+@toc reference
+@next FuzzyFreePattern
+@prev FuzzyEndIndex
+
+@{b}fuzzy.library/FuzzyErrorText@{ub}
+
+   @{b}NAME@{ub}
+        FuzzyErrorText -- An error in words (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        text = FuzzyErrorText(error)
+        D0                    D0
+
+        CONST_STRPTR FuzzyErrorText(LONG);
+
+   @{b}FUNCTION@{ub}
+        Returns an English text for an FERR_ code: "the index is not
+        there", "not a FuzzyFind index"...
+
+   @{b}INPUTS@{ub}
+        error - FERR_OK ... FERR_ORDER
+
+   @{b}RESULT@{ub}
+        text - read-only; "unknown error" for other numbers
+@endnode
+
+@node FuzzyFreePattern "fuzzy.library/FuzzyFreePattern"
+@toc reference
+@next FuzzyFreeResults
+@prev FuzzyErrorText
+
+@{b}fuzzy.library/FuzzyFreePattern@{ub}
+
+   @{b}NAME@{ub}
+        FuzzyFreePattern -- Free a prepared pattern (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        FuzzyFreePattern(pattern)
+                         A0
+
+        VOID FuzzyFreePattern(FuzzyPattern *);
+
+   @{b}FUNCTION@{ub}
+        Frees what @{"FuzzyPrepare()" link "FuzzyPrepare"} made.
+
+   @{b}INPUTS@{ub}
+        pattern - from @{"FuzzyPrepare()" link "FuzzyPrepare"}; NULL is safe
+
+   @{b}SEE ALSO@{ub}
+        FuzzyPrepare](#fuzzyprepare)
+@endnode
+
+@node FuzzyFreeResults "fuzzy.library/FuzzyFreeResults"
+@toc reference
+@next FuzzyIndexPath
+@prev FuzzyFreePattern
+
+@{b}fuzzy.library/FuzzyFreeResults@{ub}
+
+   @{b}NAME@{ub}
+        FuzzyFreeResults -- Free search results (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        FuzzyFreeResults(results)
+                         A0
+
+        VOID FuzzyFreeResults(struct FuzzyResults *);
+
+   @{b}FUNCTION@{ub}
+        Frees the results and every path copy in them.
+
+   @{b}INPUTS@{ub}
+        results - from @{"FuzzySearch()" link "FuzzySearch"}; NULL is safe
+
+   @{b}SEE ALSO@{ub}
+        FuzzySearch](#fuzzysearch)
+@endnode
+
+@node FuzzyIndexPath "fuzzy.library/FuzzyIndexPath"
+@toc reference
+@next FuzzyNewIndex
+@prev FuzzyFreeResults
+
+@{b}fuzzy.library/FuzzyIndexPath@{ub}
+
+   @{b}NAME@{ub}
+        FuzzyIndexPath -- Where the index is (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        length = FuzzyIndexPath(buf, size)
+        D0                      A0   D0
+
+        LONG FuzzyIndexPath(STRPTR, LONG);
+
+   @{b}FUNCTION@{ub}
+        Puts the index's place into buf: the ENV: setting FuzzyFind/Index,
+        else S:FuzzyFind.index (FUZZY_INDEX). Every FuzzyFind program and
+        fuzzy.library itself (a NULL name) use this place.
+
+   @{b}INPUTS@{ub}
+        buf  - where to put it
+        size - its size
+
+   @{b}RESULT@{ub}
+        length - the length put there (0 if size < 2)
+
+   @{b}SEE ALSO@{ub}
+        FuzzyOpenIndex](#fuzzyopenindex), @{"FuzzyNewIndex" link "FuzzyNewIndex"}
+@endnode
+
+@node FuzzyNewIndex "fuzzy.library/FuzzyNewIndex"
+@toc reference
+@next FuzzyNextEntry
+@prev FuzzyIndexPath
+
+@{b}fuzzy.library/FuzzyNewIndex@{ub}
+
+   @{b}NAME@{ub}
+        FuzzyNewIndex -- Start writing an index (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        writer = FuzzyNewIndex(name, error)
+        D0                     A0    A1
+
+        FuzzyWriter *FuzzyNewIndex(CONST_STRPTR, LONG *);
+
+   @{b}FUNCTION@{ub}
+        Opens NAME.new to write a new index into; @{"FuzzyEndIndex()" link "FuzzyEndIndex"} renames
+        it to NAME, so readers never see half an index.
+
+   @{b}INPUTS@{ub}
+        name  - the index's file, or NULL for @{"FuzzyIndexPath()" link "FuzzyIndexPath"}'s place
+        error - FERR_OK, or why it failed; may be NULL
+
+   @{b}RESULT@{ub}
+        writer - the writer, or NULL (FERR_NOFILE: NAME.new cannot be made;
+                 FERR_NOMEM)
+
+   @{b}SEE ALSO@{ub}
+        FuzzyAddVolume](#fuzzyaddvolume), @{"FuzzyAddEntry" link "FuzzyAddEntry"}, @{"FuzzyEndIndex" link "FuzzyEndIndex"}
+@endnode
+
+@node FuzzyNextEntry "fuzzy.library/FuzzyNextEntry"
+@toc reference
+@next FuzzyOpenIndex
+@prev FuzzyNewIndex
+
+@{b}fuzzy.library/FuzzyNextEntry@{ub}
+
+   @{b}NAME@{ub}
+        FuzzyNextEntry -- The next entry of an index (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        ok = FuzzyNextEntry(index, entry)
+        D0                 A0     A1
+
+        LONG FuzzyNextEntry(struct FuzzyIndex *, struct FuzzyEntry *);
+
+   @{b}FUNCTION@{ub}
+        Reads the next entry into entry: Path, PathLen, NameOffset, Type
+        (FET_FILE, FET_DRAWER, FET_LINK), Prot, Size, Date.
+
+   @{b}INPUTS@{ub}
+        index - from @{"FuzzyOpenIndex()" link "FuzzyOpenIndex"}
+        entry - filled in
+
+   @{b}RESULT@{ub}
+        ok - TRUE, or FALSE at the end (or where the file is cut short or damaged)
+
+        @{b}Notes:@{ub} Path is the library's and changes with the next call: copy
+        it to keep it.
+
+   @{b}SEE ALSO@{ub}
+        FuzzyRewind](#fuzzyrewind), @{"FuzzySearch" link "FuzzySearch"}
+@endnode
+
+@node FuzzyOpenIndex "fuzzy.library/FuzzyOpenIndex"
+@toc reference
+@next FuzzyPrepare
+@prev FuzzyNextEntry
+
+@{b}fuzzy.library/FuzzyOpenIndex@{ub}
+
+   @{b}NAME@{ub}
+        FuzzyOpenIndex -- Open an index (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        index = FuzzyOpenIndex(name, error)
+        D0                     A0    A1
+
+        struct FuzzyIndex *FuzzyOpenIndex(CONST_STRPTR, LONG *);
+
+   @{b}FUNCTION@{ub}
+        Opens an index and reads its header. The public fields: Count
+        (entries), Created (seconds since 1978-01-01), Volumes.
+
+   @{b}INPUTS@{ub}
+        name  - the index's file, or NULL for @{"FuzzyIndexPath()" link "FuzzyIndexPath"}'s place
+        error - FERR_OK, or why it failed; may be NULL
+
+   @{b}RESULT@{ub}
+        index - the index, or NULL: FERR_NOFILE (not there: run updatedb),
+                FERR_NOTINDEX, FERR_VERSION (a format this library does not
+                know), FERR_NOMEM
+
+        @{b}Notes:@{ub} Each task opens its own.
+
+   @{b}SEE ALSO@{ub}
+        FuzzyNextEntry](#fuzzynextentry), @{"FuzzySearch" link "FuzzySearch"}, @{"FuzzyCloseIndex" link "FuzzyCloseIndex"}
+@endnode
+
+@node FuzzyPrepare "fuzzy.library/FuzzyPrepare"
+@toc reference
+@next FuzzyRewind
+@prev FuzzyOpenIndex
+
+@{b}fuzzy.library/FuzzyPrepare@{ub}
+
+   @{b}NAME@{ub}
+        FuzzyPrepare -- Prepare a pattern (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        pattern = FuzzyPrepare(text, flags)
+        D0                     A0    D0
+
+        FuzzyPattern *FuzzyPrepare(CONST_STRPTR, ULONG);
+
+   @{b}FUNCTION@{ub}
+        Makes a pattern from what was typed, to score any number of texts
+        with. Words are split at spaces (up to 16); case and accents are
+        folded away unless the flags say otherwise.
+
+   @{b}INPUTS@{ub}
+        text  - the pattern, Latin-1
+        flags - 0, or any of:
+                  FPF_CASE     case matters
+                  FPF_ACCENTS  accents matter
+                  FPF_PLAIN    each word as one piece of text, no gaps
+                  FPF_TEXT     the texts are not paths (no file-name bonus;
+                               a word after a space counts more)
+
+   @{b}RESULT@{ub}
+        pattern - the pattern, or NULL (text NULL, out of memory)
+
+   @{b}SEE ALSO@{ub}
+        FuzzyScore](#fuzzyscore), @{"FuzzyFreePattern" link "FuzzyFreePattern"}
+@endnode
+
+@node FuzzyRewind "fuzzy.library/FuzzyRewind"
+@toc reference
+@next FuzzyScore
+@prev FuzzyPrepare
+
+@{b}fuzzy.library/FuzzyRewind@{ub}
+
+   @{b}NAME@{ub}
+        FuzzyRewind -- Back to an index's first entry (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        FuzzyRewind(index)
+                    A0
+
+        VOID FuzzyRewind(struct FuzzyIndex *);
+
+   @{b}FUNCTION@{ub}
+        The next @{"FuzzyNextEntry()" link "FuzzyNextEntry"} gives the first entry again.
+
+   @{b}INPUTS@{ub}
+        index - from @{"FuzzyOpenIndex()" link "FuzzyOpenIndex"}
+
+   @{b}SEE ALSO@{ub}
+        FuzzyNextEntry](#fuzzynextentry)
+@endnode
+
+@node FuzzyScore "fuzzy.library/FuzzyScore"
+@toc reference
+@next FuzzySearch
+@prev FuzzyRewind
+
+@{b}fuzzy.library/FuzzyScore@{ub}
+
+   @{b}NAME@{ub}
+        FuzzyScore -- How well a pattern matches a text (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        score = FuzzyScore(pattern, text, len, pos, maxpos)
+        D0                 A0       A1    D0   A2   D1
+
+        LONG FuzzyScore(FuzzyPattern *, CONST_STRPTR, LONG, UWORD *, LONG);
+
+   @{b}FUNCTION@{ub}
+        Scores the text against the pattern as fzf does (its v1 way, path
+        scheme): every word's letters in order; bonuses for the start of
+        words, letters in a row and the file name; penalties for gaps. All
+        words must match; their scores add up.
+
+   @{b}INPUTS@{ub}
+        pattern - from @{"FuzzyPrepare()" link "FuzzyPrepare"}
+        text    - the text, Latin-1
+        len     - its length, or -1 for up to its 0 (at most 65535 used)
+        pos     - where to put each matched letter's position, or NULL
+        maxpos  - how many pos has room for
+
+   @{b}RESULT@{ub}
+        score - higher is better; 0 is no match; 1 for an empty pattern
+
+        @{b}Notes:@{ub} The positions are in pattern order, word after word: sort
+        them to draw.
+
+   @{b}SEE ALSO@{ub}
+        FuzzyPrepare](#fuzzyprepare), @{"FuzzySearch" link "FuzzySearch"}
+@endnode
+
+@node FuzzySearch "fuzzy.library/FuzzySearch"
+@toc reference
+@next FuzzyVolume
+@prev FuzzyScore
+
+@{b}fuzzy.library/FuzzySearch@{ub}
+
+   @{b}NAME@{ub}
+        FuzzySearch -- The best matches in an index (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        results = FuzzySearch(index, pattern, flags, max)
+        D0                    A0     A1       D0     D1
+
+        struct FuzzyResults *FuzzySearch(struct FuzzyIndex *, CONST_STRPTR, ULONG, LONG);
+
+   @{b}FUNCTION@{ub}
+        Scores every entry and keeps the max best, best first (ties: the
+        shorter path, then the earlier entry). Results: Count hits in
+        Hits[] (Path, PathLen, NameOffset, Score, Type, Prot, Size, Date;
+        the paths are copies), Matched (how many matched in all). Rewinds
+        the index.
+
+   @{b}INPUTS@{ub}
+        index   - from @{"FuzzyOpenIndex()" link "FuzzyOpenIndex"}
+        pattern - as for @{"FuzzyPrepare()" link "FuzzyPrepare"}
+        flags   - FPF_ flags, and FSF_FILES, FSF_DRAWERS (only those),
+                  FSF_NAME (match only the name)
+        max     - how many to keep (1 or more)
+
+   @{b}RESULT@{ub}
+        results - the results, or NULL (out of memory, max < 1)
+
+        @{b}Notes:@{ub} It reads the whole index, so it takes longer the bigger the
+        index and the slower the processor and the drive. Entries missing
+        a letter of the pattern are skipped quickly (a letter
+        fingerprint).
+
+   @{b}SEE ALSO@{ub}
+        FuzzyFreeResults](#fuzzyfreeresults), @{"FuzzyScore" link "FuzzyScore"}
+@endnode
+
+@node FuzzyVolume "fuzzy.library/FuzzyVolume"
+@toc reference
+@next ref-the-arexx-entry
+@prev FuzzySearch
+
+@{b}fuzzy.library/FuzzyVolume@{ub}
+
+   @{b}NAME@{ub}
+        FuzzyVolume -- A volume an index covers (0.1).
+
+   @{b}SYNOPSIS@{ub}
+        name = FuzzyVolume(index, n, date)
+        D0                 A0     D0 A1
+
+        CONST_STRPTR FuzzyVolume(struct FuzzyIndex *, LONG, ULONG *);
+
+   @{b}FUNCTION@{ub}
+        Returns the n-th volume's name (without the colon) and its date.
+
+   @{b}INPUTS@{ub}
+        index - from @{"FuzzyOpenIndex()" link "FuzzyOpenIndex"}
+        n     - 0 to Volumes - 1
+        date  - set to the volume's date; may be NULL
+
+   @{b}RESULT@{ub}
+        name - read-only, or NULL for n out of range
+
+   @{b}SEE ALSO@{ub}
+        FuzzyAddVolume](#fuzzyaddvolume)
+@endnode
+
+@node ref-the-arexx-entry "fuzzy.library/The ARexx entry"
+@toc reference
+@prev FuzzyVolume
+
+@{b}fuzzy.library/The ARexx entry@{ub}
+
+   @{b}NAME@{ub}
+        The ARexx entry -- The library's first entry (offset -30, before
+            FuzzyPrepare) is not a C call: it is the function ARexx calls
+            for ADDLIB('fuzzy.library', 0, -30, 0), with a RexxMsg in A0.
+            It returns an error code in D0 and the result string in A0
+            (and A1). The ARexx functions are in the guide.
+@endnode
+

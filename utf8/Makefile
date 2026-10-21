@@ -109,3 +109,10 @@ clean:
 	rm -rf build
 
 .PHONY: all headers tables clean check060 pctest pccheck fuzz lanecheck
+
+# the Markdown docs as the Amiga reads them: docs/utf8.doc (Autodocs),
+# docs/utf8_guide.doc and docs/utf8.guide (AmigaGuide), Latin-1
+docs: docs/guide.md docs/reference.md ../tools/mkdocs.py
+	python3 -I ../tools/mkdocs.py . docs
+
+.PHONY: docs

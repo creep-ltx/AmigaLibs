@@ -14,6 +14,11 @@ Every library comes with a **programmer's guide** (`docs/guide.md`: how to use i
 program, the traps) and a **reference** (`docs/reference.md`: every call in full, with its registers,
 laid out like Commodore's Autodocs). Each library's README links to them.
 
+The same docs as the Amiga reads them, in each library's `docs/`: `NAME.doc` (the reference as
+Autodocs), `NAME_guide.doc` (the guide as plain text) and `NAME.guide` (both as one AmigaGuide, every
+call linked). Latin-1; other scripts spelt in Latin letters by utf8.library's own code. The Markdown is
+the master copy: `make docs` in a library's folder (`tools/mkdocs.py`) makes the three again.
+
 Only libraries live here. Handlers, devices, datatypes and programs each have their own repository.
 
 ## Building
