@@ -1,5 +1,5 @@
 @database tui.guide
-@$VER: tui.guide 0.5b1 (17.10.2026)
+@$VER: tui.guide 0.5b3 (30.10.2026)
 @author Tobias Karlsson
 
 @node main "tui.library"
@@ -116,7 +116,9 @@ the terminal @{i}shows@{ui}. The drawing calls change only the first. TuiFlush
 compares the two and sends only the cells that differ. A program can
 redraw its whole screen after every key and the terminal still gets just
 the few cells that changed: this is what keeps it fast over a slow console
-and over the network.
+and over the network. A cell takes 6 bytes (0.5b3): the character, and its
+colours and attributes as a number in a table of the styles in use, so an
+80 x 32 terminal costs about 31 KB for both copies.
 
 @{b}Nothing shows until@{ub} TuiFlush@{b}.@{ub} TuiWait flushes by itself before it waits,
 so a loop that draws and then waits needs no flush of its own. A program

@@ -83,7 +83,9 @@ character, a foreground colour, a background colour and attributes. The library 
 what the program *wants* and what the terminal *shows*. The drawing calls change only the first.
 `TuiFlush` compares the two and sends only the cells that differ. A program can redraw its whole
 screen after every key and the terminal still gets just the few cells that changed: this is what
-keeps it fast over a slow console and over the network.
+keeps it fast over a slow console and over the network. A cell takes 6 bytes (0.5b3): the
+character, and its colours and attributes as a number in a table of the styles in use, so an 80 x
+32 terminal costs about 31 KB for both copies.
 
 **Nothing shows until `TuiFlush`.** `TuiWait` flushes by itself before it waits, so a loop that
 draws and then waits needs no flush of its own. A program that does a long job between draws must

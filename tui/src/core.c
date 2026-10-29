@@ -8,6 +8,7 @@
  * of its own (Ahiru), TC_PEN for a console's own pens. 0.5: wide
  * characters (CJK, emoji) in two cells, accents put on their letters in
  * TuiPutUTF8, the widths from utf8.library when it is there (TuiCharWidth).
+ * 0.5b3: a cell of 6 bytes, not 16 (its colours a number in a table).
  *
  * Everything a program's terminal needs lives in its own struct (Priv,
  * from TuiOpen): the library is shared, so nothing may be global.
@@ -53,18 +54,31 @@ unsigned long strlen(const char *);
 #define MAXH     200
 #define EVQ      64
 
+/* one cell: 6 bytes (0.6; 16 before). The character, and its colours
+ * and attributes as a number in the terminal's table of styles: a screen
+ * uses few of them (a 24-bit picture at most one a cell), and a cell
+ * that changed is found by comparing two numbers */
 typedef struct {
     ULONG c;
-    ULONG fg, bg;                /* 0-15, TC_DEFAULT, TC_X(n) or TC_RGB(r, g, b) */
-    UBYTE at, pad[3];
+    UWORD st;                    /* its style: Priv's sty[st] */
 } Cell;
+
+/* a style: fg (0-15, TC_DEFAULT, TC_X(n), TC_PEN(n) or TC_RGB(r, g, b):
+ * 25 bits) with the attributes above them, and bg */
+typedef struct {
+    ULONG fa, bg;
+} Style;
+#define SA_SHIFT 25
+#define SA_FG    0x01FFFFFFUL
+#define STY0     64              /* the smallest table */
+#define STYMAX   32768           /* at most (a cell's UWORD) */
 
 /* cellable()'s answer: show it reversed (a full block in a plain console
  * is a reversed space) */
 #define FB_REV 0x80000000UL
 
 /* the right half of a wide character: the cell before holds it. Not a
- * code point, and without FB_REV's bit (fill1 would take it for one) */
+ * code point, and without FB_REV's bit (putcell would take it for one) */
 #define TAIL   0x00FFFFFEUL
 
 typedef struct {
@@ -85,6 +99,14 @@ typedef struct {
     /* the grid: what should be shown, and what the terminal shows */
     Cell *want, *shown;          /* Rows x Cols each */
     int gw, gh;                  /* their size */
+    /* the styles the cells name: sty[0] the default one, nsty in use of
+     * stycap; hash finds one (2 x stycap slots, its number + 1);
+     * lfa/lbg/lst the last one asked for */
+    Style *sty;
+    UWORD *hash;
+    int nsty, stycap;
+    ULONG lfa, lbg;
+    int lst, curst;
     int curx, cury, curfg, curbg, curat;
     int cux, cuy, cuon, cushown;
     /* input */
@@ -137,6 +159,128 @@ static void outnum(Priv *p, int v)
     out(p, b + i, (int)sizeof(b) - i);
 }
 
+/* ---- styles ------------------------------------------------------------ */
+
+static ULONG hashof(ULONG fa, ULONG bg)
+{
+    ULONG h = fa ^ (fa >> 11) ^ (bg << 5) ^ (bg >> 9) ^ (bg >> 19);
+    return h ^ (h >> 7);
+}
+
+/* the hash made again from the table */
+static void rehash(Priv *p)
+{
+    ULONG h, m = (ULONG)p->stycap * 2 - 1;
+    int i;
+    memset(p->hash, 0, (ULONG)p->stycap * 2 * sizeof(UWORD));
+    for (i = 0; i < p->nsty; i++) {
+        for (h = hashof(p->sty[i].fa, p->sty[i].bg) & m; p->hash[h]; h = (h + 1) & m)
+            ;
+        p->hash[h] = (UWORD)(i + 1);
+    }
+}
+
+/* the table cap styles large (cap >= nsty); FALSE: no memory, as it was */
+static int stysize(Priv *p, int cap)
+{
+    Style *s = AllocVec((ULONG)cap * sizeof(Style), MEMF_ANY);
+    UWORD *h = AllocVec((ULONG)cap * 2 * sizeof(UWORD), MEMF_ANY);
+    if (!s || !h) {
+        if (s) FreeVec(s);
+        if (h) FreeVec(h);
+        return 0;
+    }
+    if (p->sty) {
+        memcpy(s, p->sty, (ULONG)p->nsty * sizeof(Style));
+        FreeVec(p->sty);
+        FreeVec(p->hash);
+    }
+    p->sty = s;
+    p->hash = h;
+    p->stycap = cap;
+    rehash(p);
+    return 1;
+}
+
+static void styfree(Priv *p)
+{
+    if (p->sty) FreeVec(p->sty);
+    if (p->hash) FreeVec(p->hash);
+    p->sty = NULL;
+    p->hash = NULL;
+    p->nsty = p->stycap = 0;
+}
+
+/* the table is full: only the styles wanted cells use stay, renumbered.
+ * A shown cell whose style no wanted cell has differs from the cell
+ * wanted there, so it is sent again anyway: it becomes unknown. Then
+ * the table half as large again as what stays (a power of two, STY0 at
+ * least): a screen of 24-bit colours keeps one style a cell, a program
+ * that went back to a few colours gives the memory back */
+static void __attribute__((noinline)) stygather(Priv *p)
+{
+    UWORD *map = p->hash;               /* made again after */
+    Cell *w, *s, *e = p->want + p->gw * p->gh;
+    int i, k, cap;
+    memset(map, 0, (ULONG)p->nsty * sizeof(UWORD));
+    map[0] = 1;                         /* the default one stays */
+    for (w = p->want; w < e; w++) map[w->st] = 1;
+    for (i = k = 0; i < p->nsty; i++)
+        if (map[i]) {
+            p->sty[k] = p->sty[i];
+            map[i] = (UWORD)k++;
+        } else
+            map[i] = 0xFFFF;
+    for (w = p->want, s = p->shown; w < e; w++, s++) {
+        UWORD m = map[s->st];
+        w->st = map[w->st];
+        if (m == 0xFFFF) {
+            s->c = 0xFFFFFFFF;
+            s->st = 0;
+        } else
+            s->st = m;
+    }
+    p->nsty = k;
+    p->lst = p->curst = -1;
+    for (cap = STY0; cap < k + k / 2 && cap < STYMAX; cap *= 2)
+        ;
+    if (cap == p->stycap || !stysize(p, cap)) rehash(p);
+}
+
+/* the number of a style (FA's word and bg), added if new. Every style
+ * in use and no memory for more: the default one */
+static UWORD stylefind(Priv *p, ULONG fa, ULONG b)
+{
+    ULONG h, m;
+    UWORD k;
+    m = (ULONG)p->stycap * 2 - 1;
+    for (h = hashof(fa, b) & m; (k = p->hash[h]) != 0; h = (h + 1) & m)
+        if (p->sty[k - 1].fa == fa && p->sty[k - 1].bg == b) goto found;
+    if (p->nsty == p->stycap) {
+        stygather(p);
+        if (p->nsty == p->stycap && (p->stycap >= STYMAX || !stysize(p, p->stycap * 2)))
+            return 0;
+        m = (ULONG)p->stycap * 2 - 1;
+        for (h = hashof(fa, b) & m; p->hash[h]; h = (h + 1) & m)
+            ;
+    }
+    k = (UWORD)++p->nsty;
+    p->sty[k - 1].fa = fa;
+    p->sty[k - 1].bg = b;
+    p->hash[h] = k;
+found:
+    p->lfa = fa;
+    p->lbg = b;
+    p->lst = k - 1;
+    return (UWORD)(k - 1);
+}
+
+/* a style's word of fg and attributes */
+#define FA(fg, attr) (((ULONG)(fg) & SA_FG) | ((ULONG)((attr) & 0x7F) << SA_SHIFT))
+/* the number of a style: the one asked for last again (a run of cells
+ * in one colour, without a call), or stylefind's */
+#define STYLE(p, fa, b) ((p)->lst >= 0 && (fa) == (p)->lfa && (b) == (p)->lbg ? (UWORD)(p)->lst : stylefind(p, fa, b))
+
 /* ---- the grid --------------------------------------------------------- */
 
 static void gridfree(Priv *p)
@@ -152,6 +296,14 @@ static int gridalloc(Priv *p)
     int i, n;
     if (p->gw == p->pub.Cols && p->gh == p->pub.Rows && p->want) return 1;
     gridfree(p);
+    if (!p->sty) {
+        if (!stysize(p, STY0)) return 0;
+        p->sty[0].fa = 7;               /* style 0: the default */
+        p->sty[0].bg = TC_DEFAULT;
+        p->nsty = 1;
+        rehash(p);
+        p->lst = -1;
+    }
     n = p->pub.Cols * p->pub.Rows;
     p->want = AllocVec(n * sizeof(Cell), MEMF_ANY);
     p->shown = AllocVec(n * sizeof(Cell), MEMF_ANY);
@@ -163,11 +315,9 @@ static int gridalloc(Priv *p)
     p->gh = p->pub.Rows;
     for (i = 0; i < n; i++) {
         p->want[i].c = ' ';
-        p->want[i].fg = 7;
-        p->want[i].bg = TC_DEFAULT;
-        p->want[i].at = 0;
-        p->shown[i] = p->want[i];
+        p->want[i].st = 0;
         p->shown[i].c = 0xFFFFFFFF;     /* unknown: sent on the next flush */
+        p->shown[i].st = 0;
     }
     return 1;
 }
@@ -175,6 +325,7 @@ static int gridalloc(Priv *p)
 static void forget(Priv *p)
 {
     p->curx = p->cury = p->curfg = p->curbg = p->curat = -1;
+    p->curst = -1;
     p->cushown = -1;
 }
 
@@ -352,41 +503,40 @@ static void unwide(Priv *p, Cell *r, int col, int n)
     if (col > 0 && col < p->gw && r[col].c == TAIL) r[col].c = ' ';
 }
 
-static void fill1(Cell *q, ULONG c, LONG fg, LONG bg, LONG attr)
-{
-    if (c & FB_REV) {
-        c &= ~FB_REV;
-        attr ^= TA_REV;
-    }
-    q->c = c;
-    q->fg = (ULONG)fg;
-    q->bg = (ULONG)bg;
-    q->at = (UBYTE)attr;
-}
-
 /* c at col (on the grid): the cells it took, 1 or 2 (a wide character:
  * its right half is TAIL; on a Latin-1 console '?' and a space) */
 static int putcell(Priv *p, int col, int row, ULONG c, LONG fg, LONG bg, LONG attr)
 {
     Cell *r = p->want + row * p->gw;
+    ULONG fa = FA(fg, attr);
+    UWORD st = STYLE(p, fa, (ULONG)bg);
     if (c >= 0x1100 && TuiCharWidth(c) == 2) {
         if (col + 1 >= p->gw) {             /* half of it would not show */
             unwide(p, r, col, 1);
-            fill1(r + col, c == 0x3000 ? ' ' : '?', fg, bg, attr);
+            r[col].c = c == 0x3000 ? ' ' : '?';
+            r[col].st = st;
             return 2;
         }
         unwide(p, r, col, 2);
         if (!p->pub.UTF8) {
-            fill1(r + col, c == 0x3000 ? ' ' : '?', fg, bg, attr);
-            fill1(r + col + 1, ' ', fg, bg, attr);
+            r[col].c = c == 0x3000 ? ' ' : '?';
+            r[col + 1].c = ' ';
         } else {
-            fill1(r + col, c, fg, bg, attr);
-            fill1(r + col + 1, TAIL, fg, bg, attr);
+            r[col].c = c;
+            r[col + 1].c = TAIL;
         }
+        r[col].st = r[col + 1].st = st;
         return 2;
     }
-    unwide(p, r, col, 1);
-    fill1(r + col, cellable(p, c), fg, bg, attr);
+    /* (the usual case without a call: no wide character cut, ASCII) */
+    if (r[col].c == TAIL || (col + 1 < p->gw && r[col + 1].c == TAIL)) unwide(p, r, col, 1);
+    if (c < 32 || c >= 0x7F) c = cellable(p, c);
+    if (c & FB_REV) {                       /* shown reversed */
+        c &= ~FB_REV;
+        st = stylefind(p, fa ^ ((ULONG)TA_REV << SA_SHIFT), (ULONG)bg);
+    }
+    r[col].c = c;
+    r[col].st = st;
     return 1;
 }
 
@@ -469,18 +619,18 @@ void TuiPut(struct Tui *t, LONG col, LONG row, CONST_STRPTR s, LONG len, LONG fg
     Priv *p = P(t);
     Cell *q;
     int i;
+    UWORD st;
     if (!p || row < 0 || row >= p->gh) return;
     if (col < 0) { s -= col; len += col; col = 0; }
     if (len > p->gw - col) len = p->gw - col;
     if (len <= 0) return;
     unwide(p, p->want + row * p->gw, col, len);
+    st = stylefind(p, FA(fg, attr), (ULONG)bg);
     q = &p->want[row * p->gw + col];
     for (i = 0; i < len; i++, q++) {
         unsigned char c = s[i];
         q->c = c >= 32 && c < 0x7F ? c : cellable(p, c);   /* never FB_REV */
-        q->fg = (ULONG)fg;
-        q->bg = (ULONG)bg;
-        q->at = (UBYTE)attr;
+        q->st = st;
     }
 }
 
@@ -489,6 +639,7 @@ void TuiFill(struct Tui *t, LONG col, LONG row, LONG w, ULONG c, LONG fg, LONG b
     Priv *p = P(t);
     Cell *q;
     int i;
+    UWORD st;
     if (!p || row < 0 || row >= p->gh) return;
     if (col < 0) { w += col; col = 0; }
     if (w > p->gw - col) w = p->gw - col;
@@ -499,12 +650,11 @@ void TuiFill(struct Tui *t, LONG col, LONG row, LONG w, ULONG c, LONG fg, LONG b
         c &= ~FB_REV;
         attr ^= TA_REV;
     }
+    st = stylefind(p, FA(fg, attr), (ULONG)bg);
     q = &p->want[row * p->gw + col];
     for (i = 0; i < w; i++, q++) {
         q->c = c;
-        q->fg = (ULONG)fg;
-        q->bg = (ULONG)bg;
-        q->at = (UBYTE)attr;
+        q->st = st;
     }
 }
 
@@ -681,8 +831,7 @@ void TuiFlush(struct Tui *t)
                 s[c] = w[c];
                 continue;
             }
-            if (w[c].c == s[c].c && w[c].fg == s[c].fg && w[c].bg == s[c].bg && w[c].at == s[c].at &&
-                (!wide || s[c + 1].c == TAIL))
+            if (w[c].c == s[c].c && w[c].st == s[c].st && (!wide || s[c + 1].c == TAIL))
                 continue;
             if (!p->pub.CTerm && r == p->gh - 1 && c == p->gw - 1) {
                 s[c] = w[c];                /* a console that would scroll there */
@@ -690,7 +839,11 @@ void TuiFlush(struct Tui *t)
             }
             if (p->cushown) cursorvis(p, 0);    /* no cursor jumping about while drawing */
             moveto(p, c, r);
-            sgr(p, w[c].fg, w[c].bg, w[c].at);
+            if (w[c].st != p->curst) {
+                const Style *y = p->sty + w[c].st;
+                sgr(p, (int)(y->fa & SA_FG), (int)y->bg, (int)(y->fa >> SA_SHIFT));
+                p->curst = w[c].st;
+            }
             putch(p, w[c].c);
             s[c] = w[c];
             p->curx++;
@@ -1381,6 +1534,7 @@ struct Tui *TuiOpenIO(BPTR in, BPTR out)
     TuiRedraw(&p->pub);
     return &p->pub;
 fail:
+    styfree(p);
     if (p->wpkt) FreeDosObject(DOS_STDPKT, p->wpkt);
     if (p->rport) DeleteMsgPort(p->rport);
     FreeVec(p);
@@ -1405,6 +1559,7 @@ void TuiClose(struct Tui *t)
     FreeDosObject(DOS_STDPKT, p->wpkt);
     DeleteMsgPort(p->rport);
     gridfree(p);
+    styfree(p);
     if (p->pastebuf) FreeVec(p->pastebuf);
     if (p->pastegive) FreeVec(p->pastegive);
     FreeVec(p);

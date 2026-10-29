@@ -110,8 +110,29 @@ for them. A real 68060 was not measured (FS-UAE has none set up). After adding a
 | `docs/guide.md` | the programmer's guide |
 | `docs/reference.md` | every call in full |
 | `tests/tuitest.c` | draws everything, logs events: `tuitest` or `tuitest SECS` |
+| `tests/hostcmp/run.sh [REV]` | on Linux: `core.c` against an older one (git REV), the same random screens must send the same bytes |
 
 ## State
+
+**0.5b3, 2026-10-30:** less memory. A cell of the two grids (what the program wants, what the terminal shows)
+took 16 bytes; now 6: the character, and its colours and attributes as a number in a table of the styles in use,
+which grows when needed and gives back what no cell uses any more. An 80 x 32 terminal: 80 KB before, about 31 KB
+now (30 KB of cells and a table of 0.8 KB; a screen of all different 24-bit colours takes a table of up to 48 KB).
+Nothing shows differently: a test on Linux drives the old and the new `core.c` through the same 2000 random
+screens (every kind of colour, attributes, wide characters, accents, a plain console and CTerm, screens of all
+different 24-bit colours) and they send the terminal the same bytes. Faster where it counts, `tuibench 20` in
+FS-UAE (A1200, 68EC020, 020 build, emulator figures, ms):
+
+| Where | | draw | scan | full |
+|---|---|---|---|---|
+| CTerm 76 x 28 | 0.5b2 | 11450 | 11560 | 18760 |
+| | **0.5b3** | **9170** | **10150** | **18610** |
+| Shell window 77 x 30 | 0.5b2 | 12740 | 11800 | 5700 |
+| | **0.5b3** | **10150** | **10290** | **6030** |
+
+A whole screen of new 24-bit colours each time (`full`) is about the same in CTerm and 5% slower in a Shell
+window; everything else is 12-20% faster. The library is 1.2 KB larger. No call changed; programs need nothing
+new.
 
 **0.5b2, 2026-10-29:** a 24-bit colour whose green value has bit 1 set (green 2, 3, 6, 7 ... 255) was drawn
 as one of the eight pen colours: the pen flag was tested before the 24-bit flag, and the two overlap. The 24-bit
