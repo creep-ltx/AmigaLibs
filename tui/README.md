@@ -113,6 +113,10 @@ for them. A real 68060 was not measured (FS-UAE has none set up). After adding a
 
 ## State
 
+**0.5b2, 2026-10-29:** a 24-bit colour whose green value has bit 1 set (green 2, 3, 6, 7 ... 255) was drawn
+as one of the eight pen colours: the pen flag was tested before the 24-bit flag, and the two overlap. The 24-bit
+flag is now tested first everywhere (found by Zenix's port of the library).
+
 **0.5b1, 2026-10-17:** wide characters (Chinese, Japanese, Korean, emoji) take two cells, and
 `TuiPutUTF8` puts accents written as separate marks on their letter. The widths come from
 utf8.library when it is in `LIBS:` (opened on first need), else a table of its own that is the same

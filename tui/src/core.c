@@ -565,8 +565,8 @@ static int rgbto256(int c)
 /* any colour as one of the sixteen (a plain console) */
 static int to16any(int c)
 {
+    if (c & 0x1000000) return to16(rgbto256(c));   /* first: a 24-bit colour's green has bits 0x100 and 0x200 */
     if (c & 0x200) return c & 7;
-    if (c & 0x1000000) return to16(rgbto256(c));
     if (c & 0x100) return to16(c & 0xFF);
     return c & 15;
 }
@@ -574,7 +574,8 @@ static int to16any(int c)
 static void sgrcol(Priv *p, int c, int base)
 {
     if (c == TC_DEFAULT) { outnum(p, base + 9); return; }
-    if (c & 0x200) c &= 7;          /* TC_PEN: as colour n where colours are */
+    if (!(c & 0x1000000) && (c & 0x200))
+        c &= 7;                     /* TC_PEN: as colour n where colours are (never a 24-bit colour: its green has 0x200) */
     if (c & 0x1000000) {            /* CTerm: 24-bit */
         outnum(p, base + 8);
         outs(p, ";2;");
@@ -611,8 +612,8 @@ static void sgr(Priv *p, int fg, int bg, int at)
         if (at & TA_DIM) outs(p, ";2");
     } else {
         /* TC_PEN: the pen as it is; anything else the nearest pen */
-        fg = fg == TC_DEFAULT ? 1 : fg & 0x200 ? fg & 7 : wbpen[to16any(fg)];
-        bg = bg == TC_DEFAULT ? TC_DEFAULT : bg & 0x200 ? bg & 7 : wbpen[to16any(bg)];
+        fg = fg == TC_DEFAULT ? 1 : (fg & 0x1000200) == 0x200 ? fg & 7 : wbpen[to16any(fg)];
+        bg = bg == TC_DEFAULT ? TC_DEFAULT : (bg & 0x1000200) == 0x200 ? bg & 7 : wbpen[to16any(bg)];
     }
     out(p, ";", 1);
     sgrcol(p, fg, 30);
